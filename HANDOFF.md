@@ -16,7 +16,7 @@ Precedence when docs disagree: `BUILD-DECISIONS.md` > `SPEC.md` (mechanics) > `P
 
 ## Current state
 
-> **Stage: Milestone 1 completed.** The Go module is scaffolded, CLI/core/store/harness packages are built, Claude Code/Codex capabilities are verified and logged in docs/harness-capabilities.md, and `init` / `doctor` baselines are fully implemented and passing tests.
+> **Stage: Milestone 2 completed.** File store persistence layer (CRUD, locks, atomic writes, ids/slugs, audit logging) is implemented. CLI commands `ls`, `show`, `path`, and `archive` are fully functional and tested.
 
 Dossier is a local, single-user durable memory layer for agent-driven work across Claude Code, Codex, and Antigravity.
 
