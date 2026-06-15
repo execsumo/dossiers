@@ -127,7 +127,7 @@ Full command reference: `dossier --help` and `SPEC.md`.
 
 ## Known limitations
 
-- **Hooks store an absolute path to the binary.** The installer registers the absolute path of the `dossier` binary in settings.json (for Claude Code) or hooks.json (for Codex). If you rebuild, rename, or move the binary, the configured hooks will dangle. To resolve this, simply re-run `dossier init` from the new binary location to update the hook bindings automatically and idempotently.
+- **Config is split across files for Claude Code.** Hooks are written to `~/.claude/settings.json`; the MCP server is registered in `~/.claude.json` (the only place Claude Code reads user-scope MCP servers). Codex keeps both in `~/.codex/config.toml`. Each entry stores the absolute path of the stable `dossier` binary — if you rebuild, rename, or move it, re-run `dossier install` then `dossier init` to re-bind paths idempotently. `init` also strips any stale `dossier` MCP entry an older build mistakenly wrote into `settings.json`.
 - **Token estimates are approximate.** Dossier uses one BPE tokenizer benchmarked against Opus 4.8 as a reference; it does not match every target model exactly. The 100k-token figure is a configurable warning threshold, not a hard limit — Dossier warns, never silently truncates.
 - **Capabilities vary by harness.** Hooks and transcript capture depend on what each harness exposes. Dossier states what's available at install and at session start (e.g. Codex transcript capture is unavailable).
 

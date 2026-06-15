@@ -253,7 +253,7 @@ All three construct the Service identically via a small `wire()` that picks adap
 
 ## 8. Harness adapters (the fragile edge)
 
-Each harness implements `Detect()` and `Install()`. `Install` is **idempotent, non-clobbering, and backs up** every file it touches (B7), and is **gated by per-harness confirmation** in `init` (B8). It registers both the lifecycle hooks and the MCP server (under name `"dossier"`) using the stable binary path passed via `InstallOpts.StableBinaryPath`. Capability detection produces the booleans in SPEC §5.1 and a Tier (§5.5/§6.1).
+Each harness implements `Detect()` and `Install()`. `Install` is **idempotent, non-clobbering, and backs up** every file it touches (B7), and is **gated by per-harness confirmation** in `init` (B8). It registers both the lifecycle hooks and the MCP server (under name `"dossier"`) using the stable binary path passed via `InstallOpts.StableBinaryPath`. A harness may keep these in **distinct files**: for Claude Code, hooks go to `~/.claude/settings.json` while the MCP server must go to `~/.claude.json` (the only location Claude Code reads user-scope MCP servers from); Codex keeps both in `~/.codex/config.toml`. `Install` also migrates stale entries an older build wrote to the wrong file (e.g. a `dossier` MCP entry left in `settings.json`). Capability detection produces the booleans in SPEC §5.1 and a Tier (§5.5/§6.1).
 
 Build **Claude Code first** (B2) to a real Tier-1 implementation; codify what you learn in `docs/harness-capabilities.md`; then implement Codex and Antigravity against the same interface, letting them land on Tier 2/3 honestly. The product must **degrade visibly** — a missing capability is a warning surfaced through `Result`, never a silent no-op.
 

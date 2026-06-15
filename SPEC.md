@@ -383,7 +383,7 @@ dossier doctor
 - Installs Distillation Guide.
 - Generates `context/library.md`.
 - Detects configured harnesses where possible.
-- Prompts for per-harness confirmation before updating user/global configurations to register the Dossier MCP server and lifecycle hooks, preserving existing third-party servers and hooks (never-clobber behavior).
+- Prompts for per-harness confirmation before updating user/global configurations to register the Dossier MCP server and lifecycle hooks, preserving existing third-party servers and hooks (never-clobber behavior). Writes each to the file the harness actually reads (for Claude Code, hooks → `~/.claude/settings.json`, MCP → `~/.claude.json`; for Codex, both → `~/.codex/config.toml`) and idempotently migrates stale entries an older build wrote to the wrong file.
 - Prints capability tier and warnings for Claude Code, Codex, and Antigravity.
 - Does not fail if a harness config cannot be updated or hooks are unsupported; warns visibly.
 
