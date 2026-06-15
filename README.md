@@ -16,31 +16,31 @@ See [Known limitations](#known-limitations) before relying on automatic session 
 
 ## Requirements
 
-- **Go 1.22+** to build (there is no prebuilt release yet).
+- **Go 1.26+** to build (there is no prebuilt release yet).
 - macOS or Linux. One or more supported harnesses installed: Claude Code, Codex, or Antigravity.
 
-## Install
+## Install & set up
 
-There is no published binary yet, so you build it from source. **You do not need to keep working inside this repo** — once built, the `dossier` binary is self-contained. Install it to a stable location on your `PATH` using the `install` command so its path never changes:
+There is no published binary yet, so you build from source. After that, **`dossier init` is the only command you need** — it sets everything up in one pass:
 
 ```bash
-git clone <repo-url> dossiers
+git clone https://github.com/execsumo/dossiers.git
 cd dossiers
 go build ./cmd/dossier
-./dossier install                                  # copies the binary to stable ~/.local/bin/dossier
-which dossier                                      # confirm it's on PATH
+./dossier init        # self-installs to a stable PATH, then configures everything
 ```
 
-If you only want to try it without installing, `./dossier` can be run directly from the repo directory.
+Running `init` from the build directory triggers a self-install: because the binary is on a volatile path, `init` offers to copy itself to a stable location on your `PATH` (`~/.local/bin/dossier`) so its path never changes, then continues. (Pass `-y` to accept without prompting; once installed, `dossier init` from anywhere skips this step.)
 
-## Initialize
+`init` then, in the same run:
 
-Run `init` **once, from anywhere**. If Dossier detects it is running from a volatile path (such as a temporary folder or repository build folder), it will offer to self-install itself to a stable path first.
+- creates your workspace at `~/.dossier` (config, context templates, the Distillation Guide), and
+- detects your supported harnesses and registers the Dossier **MCP server** and lifecycle **hooks** (`SessionStart`, `SessionEnd`, `PreCompact`) in their user/global config.
 
-It then creates your workspace at `~/.dossier` (config, context templates, the Distillation Guide) and automatically registers the Dossier MCP server and lifecycle hooks in your active harnesses.
+Harness configuration is confirmed per harness (skipped with `-y`), idempotent, non-clobbering (your other MCP servers and hooks are preserved), and backs up each config file before editing:
 
-```bash
-dossier init
+```
+Configure Claude Code integration (hooks + MCP server)? [y/N]: y
 ```
 
 Example output:
@@ -54,48 +54,30 @@ Harness support:
 - Antigravity: Tier 3 (context/MCP fallback only)
 ```
 
-Verify the workspace any time:
+Verify any time:
 
 ```bash
+which dossier       # confirm it's on PATH
 dossier doctor      # "Dossier workspace is healthy!"
 ```
 
 Your data lives in `~/.dossier/` as plain files and **persists across restarts**. Dossier is not a daemon — there is no background process; the binary is invoked on demand by you, by hooks, or by the MCP server.
 
-## Connect it to your agent
+> ⚠️ The hook/MCP config stores the absolute path of the stable binary. If you later rebuild, rename, or move it, re-run `dossier install` (re-copies to the stable path) then `dossier init` (re-binds config) to fix the paths idempotently.
 
-`dossier init` automatically detects supported harnesses and configures both the MCP server and session hooks (`SessionStart`, `SessionEnd`, `PreCompact`) in their user/global configuration files. 
+### Manual configuration
 
-It does this after prompting for confirmation per harness (skipped if `-y` is passed). The installation is fully idempotent, non-clobbering (preserving other MCP servers and hooks), and backs up config files before editing.
+If a harness can't be auto-configured (e.g. Antigravity), `init` warns and prints setup instructions. To wire it up by hand:
 
-### Automatic configuration
-Simply run:
-```bash
-dossier init
-```
+**MCP server**
+- **Claude Code:** under `"mcpServers"` in `~/.claude.json` (or `claude mcp add dossier -- dossier mcp serve`).
+- **Codex:** under `[mcp_servers.dossier]` in `~/.codex/config.toml`.
+- **Antigravity:** add a stdio MCP server pointing to the stable binary path with args `["mcp", "serve"]`.
 
-If it detects Claude Code or Codex on your machine, it will offer to integrate itself:
-```
-Configure Claude Code integration (hooks + MCP server)? [y/N]: y
-```
-
-### Manual configuration (if needed)
-
-If a harness cannot be automatically configured (e.g. Antigravity), Dossier will warn you during `init` and print manual setup instructions.
-
-#### MCP
-To register Dossier manually:
-- **Claude Code:** Registered in `~/.claude.json` under `"mcpServers"` (or locally via `claude mcp add dossier -- dossier mcp serve`).
-- **Codex:** Registered in `~/.codex/config.toml` under `[mcp_servers.dossier]`.
-- **Antigravity:** Add a stdio MCP server pointing to the stable binary path with arguments `["mcp", "serve"]`.
-
-#### Session hooks
-Run hooks manually to see what they emit:
+**Session hooks** — run a hook directly to see what it emits:
 ```bash
 dossier hook session-start    # prints your Dossier library + capabilities
 ```
-
-> ⚠️ Automatic hook/MCP configuration uses stable path bindings. If you relocate the binary, run `dossier install` and `dossier init` again to re-bind paths.
 
 ## Everyday use
 
@@ -133,4 +115,4 @@ Full command reference: `dossier --help` and `SPEC.md`.
 
 ## License
 
-> _TBD._
+[MIT](LICENSE) © 2026 Herwin Gill
