@@ -72,6 +72,8 @@ func TestMCPServer(t *testing.T) {
 		`{"jsonrpc":"2.0","method":"tools/call","params":{"name":"dossier_recall","arguments":{"id":"dos_1"}},"id":3}`,
 		`{"jsonrpc":"2.0","method":"tools/call","params":{"name":"dossier_search","arguments":{"query":"matching"}},"id":4}`,
 		`{"jsonrpc":"2.0","method":"tools/call","params":{"name":"dossier_recall","arguments":{"id":"dos_nonexistent"}},"id":5}`,
+		`{"jsonrpc":"2.0","method":"tools/call","params":{"name":"dossier_promote","arguments":{"name":"New MCP Dossier","distilled_state_markdown":"# New","session_content":"hello","force":true}},"id":6}`,
+		`{"jsonrpc":"2.0","method":"tools/call","params":{"name":"dossier_link","arguments":{"id":"dos_1","session_content":"linked content"}},"id":7}`,
 	}
 
 	inBuf := bytes.NewBufferString(strings.Join(inputSequence, "\n") + "\n")
@@ -87,8 +89,8 @@ func TestMCPServer(t *testing.T) {
 
 	// Parse responses line-by-line
 	outputLines := strings.Split(strings.TrimSpace(outBuf.String()), "\n")
-	if len(outputLines) != 5 {
-		t.Fatalf("expected 5 response lines, got %d:\n%s", len(outputLines), outBuf.String())
+	if len(outputLines) != 7 {
+		t.Fatalf("expected 7 response lines, got %d:\n%s", len(outputLines), outBuf.String())
 	}
 
 	// 1. Assert initialize response
@@ -186,5 +188,31 @@ func TestMCPServer(t *testing.T) {
 	}
 	if env5.Error.Code != ErrCodeNotFound {
 		t.Errorf("expected error code %s, got %s", ErrCodeNotFound, env5.Error.Code)
+	}
+
+	// 6. Assert tools/call (promote) response
+	var resp6 JSONRPCResponse
+	_ = json.Unmarshal([]byte(outputLines[5]), &resp6)
+	var callRes6 map[string]any
+	_ = json.Unmarshal(resp6.Result, &callRes6)
+	contentList6 := callRes6["content"].([]any)
+	textItem6 := contentList6[0].(map[string]any)
+	var env6 mcpEnvelope
+	_ = json.Unmarshal([]byte(textItem6["text"].(string)), &env6)
+	if !env6.OK {
+		t.Errorf("expected promote ok, got error: %+v", env6.Error)
+	}
+
+	// 7. Assert tools/call (link) response
+	var resp7 JSONRPCResponse
+	_ = json.Unmarshal([]byte(outputLines[6]), &resp7)
+	var callRes7 map[string]any
+	_ = json.Unmarshal(resp7.Result, &callRes7)
+	contentList7 := callRes7["content"].([]any)
+	textItem7 := contentList7[0].(map[string]any)
+	var env7 mcpEnvelope
+	_ = json.Unmarshal([]byte(textItem7["text"].(string)), &env7)
+	if !env7.OK {
+		t.Errorf("expected link ok, got error: %+v", env7.Error)
 	}
 }

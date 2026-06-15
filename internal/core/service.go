@@ -124,10 +124,111 @@ type PromoteReq struct {
 	Name                   string
 	DistilledStateMarkdown string
 	FromFilePath           string
+	Content                string
+	Force                  bool
 }
 
 func (s *Service) Promote(ctx context.Context, req PromoteReq) (Result, error) {
-	return Result{}, NewError(ErrInternal, "unimplemented in Milestone 1")
+	if req.Name == "" {
+		return Result{}, NewError(ErrInvalidFrontmatter, "dossier name is required")
+	}
+
+	now := s.clock.Now()
+
+	if !req.Force {
+		fms, err := s.store.List("all")
+		if err == nil {
+			var candidates []Suggestion
+			for _, fm := range fms {
+				d, _, err := s.store.Read(fm.ID)
+				if err != nil {
+					continue
+				}
+				sug := ScoreDossier(req.Name, d, now)
+				if sug.Confidence == "high" || sug.Confidence == "medium" {
+					candidates = append(candidates, sug)
+				}
+			}
+
+			if len(candidates) > 0 {
+				sort.Slice(candidates, func(i, j int) bool {
+					return candidates[i].Score > candidates[j].Score
+				})
+				return Result{
+					OK:   false,
+					Data: candidates,
+				}, NewError(ErrAmbiguousTarget, "Multiple likely Dossiers match this promote request.")
+			}
+		}
+	}
+
+	saveRes, err := s.Save(ctx, SaveReq{
+		DistilledStateMarkdown: req.DistilledStateMarkdown,
+		FrontmatterUpdates: map[string]any{
+			"name": req.Name,
+		},
+	})
+	if err != nil {
+		return Result{}, err
+	}
+
+	newRevision := saveRes.Data.(Revision)
+	fms, err := s.store.List("all")
+	var newID string
+	if err == nil {
+		for _, fm := range fms {
+			if fm.Name == req.Name {
+				newID = fm.ID
+				break
+			}
+		}
+	}
+
+	var warnings []Warning
+	if req.Content != "" && newID != "" {
+		art := Artifact{
+			ID:            "art_transcript",
+			DossierID:     newID,
+			Type:          ArtifactTypeTranscript,
+			Title:         "Captured Session Transcript",
+			ContentFormat: ContentFormatText,
+			Content:       req.Content,
+			CapturedAt:    now,
+			RefreshedAt:   now,
+		}
+		_ = s.store.WriteArtifact(newID, &art)
+
+		_ = s.store.AppendAudit(newID, AuditEvent{
+			TS:             now,
+			Event:          AuditEventSave,
+			DossierID:      newID,
+			BeforeRevision: string(newRevision),
+			AfterRevision:  string(newRevision),
+			ArtifactsAdded: []string{art.ID},
+		})
+	}
+
+	harnesses := s.hreg.All()
+	var activeHarness Harness
+	for _, h := range harnesses {
+		caps, err := h.Detect()
+		if err == nil && (caps.MCP || caps.SessionStartHook || caps.SessionEndHook || caps.PreCompactionHook || caps.TranscriptCapture) {
+			activeHarness = h
+			if !caps.TranscriptCapture {
+				warnings = append(warnings, Warning("Transcript archive is unavailable in this session."))
+			}
+			break
+		}
+	}
+	if activeHarness == nil {
+		warnings = append(warnings, Warning("Transcript archive is unavailable in this session."))
+	}
+
+	return Result{
+		OK:       true,
+		Data:     newID,
+		Warnings: warnings,
+	}, nil
 }
 
 type SaveReq struct {
@@ -261,10 +362,88 @@ func (s *Service) Save(ctx context.Context, req SaveReq) (Result, error) {
 type LinkReq struct {
 	ID           string
 	FromFilePath string
+	Content      string
+	Title        string
 }
 
 func (s *Service) Link(ctx context.Context, req LinkReq) (Result, error) {
-	return Result{}, NewError(ErrInternal, "unimplemented in Milestone 2")
+	now := s.clock.Now()
+
+	if req.ID == "" {
+		fms, err := s.store.List("all")
+		if err != nil {
+			return Result{}, err
+		}
+
+		var suggestions []Suggestion
+		for _, fm := range fms {
+			d, _, err := s.store.Read(fm.ID)
+			if err != nil {
+				continue
+			}
+			sug := ScoreDossier(req.Content, d, now)
+			suggestions = append(suggestions, sug)
+		}
+
+		sort.Slice(suggestions, func(i, j int) bool {
+			return suggestions[i].Score > suggestions[j].Score
+		})
+
+		limit := 3
+		if len(suggestions) < limit {
+			limit = len(suggestions)
+		}
+		top := suggestions[:limit]
+
+		return Result{
+			OK:   false,
+			Data: top,
+		}, NewError(ErrAmbiguousTarget, "Multiple likely Dossiers match this link request.")
+	}
+
+	d, baseRev, err := s.store.Read(req.ID)
+	if err != nil {
+		return Result{}, err
+	}
+
+	d.Frontmatter.LastTouchedAt = now
+	newRev, err := s.store.Write(d, baseRev)
+	if err != nil {
+		return Result{}, err
+	}
+
+	title := req.Title
+	if title == "" {
+		title = "Linked Session Content"
+	}
+
+	art := Artifact{
+		DossierID:     d.Frontmatter.ID,
+		Type:          ArtifactTypeSourceSnapshot,
+		Title:         title,
+		ContentFormat: ContentFormatText,
+		Content:       req.Content,
+		CapturedAt:    now,
+		RefreshedAt:   now,
+	}
+
+	if err := s.store.WriteArtifact(d.Frontmatter.ID, &art); err != nil {
+		return Result{}, err
+	}
+
+	_ = s.store.AppendAudit(d.Frontmatter.ID, AuditEvent{
+		TS:             now,
+		Event:          AuditEventSave,
+		DossierID:      d.Frontmatter.ID,
+		BeforeRevision: string(baseRev),
+		AfterRevision:  string(newRev),
+		ArtifactsAdded: []string{art.ID},
+	})
+
+	return Result{
+		OK:   true,
+		Data: newRev,
+	}, nil
 }
 
 type MergeReq struct {

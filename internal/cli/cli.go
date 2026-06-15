@@ -25,6 +25,9 @@ var (
 	statusFlag        string
 	jsonFlag          bool
 	dossierSearchFlag string
+	distilledFlag     string
+	fromFileFlag      string
+	forceFlag         bool
 )
 
 // Execute runs the cobra command parser.
@@ -410,6 +413,133 @@ func Execute() {
 	}
 	mcpCmd.AddCommand(mcpServeCmd)
 
+	promoteCmd := &cobra.Command{
+		Use:   "promote <name>",
+		Short: "Promote a new dossier from session content or file",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			homeDir := resolveHomeDir()
+			svc, err := wire(homeDir)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+
+			var content string
+			if fromFileFlag != "" {
+				data, err := os.ReadFile(fromFileFlag)
+				if err != nil {
+					fmt.Printf("Error reading file: %v\n", err)
+					os.Exit(1)
+				}
+				content = string(data)
+			}
+
+			req := core.PromoteReq{
+				Name:                   args[0],
+				DistilledStateMarkdown: distilledFlag,
+				Content:                content,
+				Force:                  forceFlag || yesFlag,
+			}
+
+			res, err := svc.Promote(context.Background(), req)
+			if err != nil {
+				if dErr, ok := err.(*core.DomainError); ok && dErr.Code == core.ErrAmbiguousTarget {
+					if jsonFlag {
+						printJSON(res)
+						return
+					}
+					fmt.Println("Error: Multiple likely dossiers match this name. Disambiguation required:")
+					suggestions := res.Data.([]core.Suggestion)
+					for _, sug := range suggestions {
+						fmt.Printf("- %s (ID: %s, Confidence: %s) - Reason: %s\n", sug.Name, sug.ID, sug.Confidence, sug.Reason)
+					}
+					fmt.Println("\nTo create anyway, re-run with --force or -y.")
+					os.Exit(1)
+				}
+
+				fmt.Printf("Promote failed: %v\n", err)
+				os.Exit(1)
+			}
+
+			if jsonFlag {
+				printJSON(res)
+				return
+			}
+
+			fmt.Printf("Dossier promoted successfully. ID: %s\n", res.Data.(string))
+		},
+	}
+	promoteCmd.Flags().StringVar(&distilledFlag, "distilled", "", "Distilled state markdown body")
+	promoteCmd.Flags().StringVar(&fromFileFlag, "from-file", "", "Path to session content file")
+	promoteCmd.Flags().BoolVar(&forceFlag, "force", false, "Force create dossier even if matches exist")
+	promoteCmd.Flags().BoolVar(&jsonFlag, "json", false, "Output results in JSON format")
+
+	linkCmd := &cobra.Command{
+		Use:   "link [<slug-or-id>]",
+		Short: "Link session content or file to a dossier",
+		Run: func(cmd *cobra.Command, args []string) {
+			homeDir := resolveHomeDir()
+			svc, err := wire(homeDir)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+
+			var content string
+			var title string
+			if fromFileFlag != "" {
+				data, err := os.ReadFile(fromFileFlag)
+				if err != nil {
+					fmt.Printf("Error reading file: %v\n", err)
+					os.Exit(1)
+				}
+				content = string(data)
+				title = filepath.Base(fromFileFlag)
+			}
+
+			var targetID string
+			if len(args) > 0 {
+				targetID = args[0]
+			}
+
+			req := core.LinkReq{
+				ID:      targetID,
+				Content: content,
+				Title:   title,
+			}
+
+			res, err := svc.Link(context.Background(), req)
+			if err != nil {
+				if dErr, ok := err.(*core.DomainError); ok && dErr.Code == core.ErrAmbiguousTarget {
+					if jsonFlag {
+						printJSON(res.Data)
+						return
+					}
+					fmt.Println("Ambiguity detected. Top matching dossiers for this content:")
+					suggestions := res.Data.([]core.Suggestion)
+					for _, sug := range suggestions {
+						fmt.Printf("- %s (ID: %s, Confidence: %s) - Reason: %s\n", sug.Name, sug.ID, sug.Confidence, sug.Reason)
+					}
+					fmt.Println("\nTo link, run again with: dossier link <id> --from-file <path>")
+					os.Exit(1)
+				}
+
+				fmt.Printf("Link failed: %v\n", err)
+				os.Exit(1)
+			}
+
+			if jsonFlag {
+				printJSON(res)
+				return
+			}
+
+			fmt.Printf("Dossier linked successfully. New revision: %s\n", res.Data.(core.Revision))
+		},
+	}
+	linkCmd.Flags().StringVar(&fromFileFlag, "from-file", "", "Path to session content file")
+	linkCmd.Flags().BoolVar(&jsonFlag, "json", false, "Output results in JSON format")
+
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(doctorCmd)
 	rootCmd.AddCommand(lsCmd)
@@ -419,6 +549,8 @@ func Execute() {
 	rootCmd.AddCommand(searchCmd)
 	rootCmd.AddCommand(contextCmd)
 	rootCmd.AddCommand(mcpCmd)
+	rootCmd.AddCommand(promoteCmd)
+	rootCmd.AddCommand(linkCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

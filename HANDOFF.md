@@ -16,7 +16,7 @@ Precedence when docs disagree: `BUILD-DECISIONS.md` > `SPEC.md` (mechanics) > `P
 
 ## Current state
 
-> **Stage: Milestone 4 completed.** The Model Context Protocol (MCP) stdio server is fully implemented in `internal/mcp` and wired into `dossier mcp serve`. All 15 required tools are registered and verified against specification contracts (wrapped result envelopes and SPEC error code mapping) via unit tests.
+> **Stage: Milestone 5 completed.** Promote and Link flows, the lexical suggestion/ranking engine, and ambiguity resolution are fully implemented. When names or session content overlap with existing dossiers, the service identifies candidates with confidence levels (high, medium, low) to prevent duplicate dossier creation.
 
 Dossier is a local, single-user durable memory layer for agent-driven work across Claude Code, Codex, and Antigravity.
 

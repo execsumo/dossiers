@@ -260,3 +260,101 @@ func TestCLIMilestone3(t *testing.T) {
 		t.Errorf("expected next action 'Implement the MCP server' in library.md, got:\n%s", libContent)
 	}
 }
+
+func TestCLIMilestone5(t *testing.T) {
+	tempHome, err := os.MkdirTemp("", "dossier-cli-m5-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp home: %v", err)
+	}
+	defer os.RemoveAll(tempHome)
+
+	svc, err := wire(tempHome)
+	if err != nil {
+		t.Fatalf("failed to wire: %v", err)
+	}
+
+	_, err = svc.Init(context.Background(), true)
+	if err != nil {
+		t.Fatalf("failed to init: %v", err)
+	}
+
+	// 1. Promote a new dossier
+	promRes, err := svc.Promote(context.Background(), core.PromoteReq{
+		Name:                   "Pricing restructure project",
+		DistilledStateMarkdown: "# Restructure",
+		Content:                "Initial sales requirements transcript.",
+	})
+	if err != nil {
+		t.Fatalf("Promote failed: %v", err)
+	}
+	if !promRes.OK {
+		t.Fatalf("expected Promote result to be OK")
+	}
+	dossierID := promRes.Data.(string)
+
+	// 2. Try promoting again with same/similar name - should fail with AmbiguousTarget error
+	_, err = svc.Promote(context.Background(), core.PromoteReq{
+		Name:                   "Pricing restructure project",
+		DistilledStateMarkdown: "# Duplicate",
+		Force:                  false,
+	})
+	if err == nil {
+		t.Fatalf("expected promote duplicate to fail with ambiguity error, got nil")
+	}
+	dErr, ok := err.(*core.DomainError)
+	if !ok || dErr.Code != core.ErrAmbiguousTarget {
+		t.Fatalf("expected ErrAmbiguousTarget error, got: %v", err)
+	}
+
+	// 3. Promote with Force=true should succeed
+	promRes2, err := svc.Promote(context.Background(), core.PromoteReq{
+		Name:                   "Pricing restructure project",
+		DistilledStateMarkdown: "# Forced Duplicate",
+		Force:                  true,
+	})
+	if err != nil {
+		t.Fatalf("Forced promote failed: %v", err)
+	}
+	if !promRes2.OK {
+		t.Fatalf("expected forced promote to succeed")
+	}
+
+	// 4. Link without ID (ambiguity check)
+	linkRes, err := svc.Link(context.Background(), core.LinkReq{
+		Content: "sales packaging pricing restructure info",
+	})
+	if err == nil {
+		t.Fatalf("expected link without ID to fail with ambiguity error, got nil")
+	}
+	dErr2, ok := err.(*core.DomainError)
+	if !ok || dErr2.Code != core.ErrAmbiguousTarget {
+		t.Fatalf("expected ErrAmbiguousTarget error, got: %v", err)
+	}
+	candidates := linkRes.Data.([]core.Suggestion)
+	if len(candidates) == 0 {
+		t.Fatalf("expected candidates list to be non-empty")
+	}
+
+	// 5. Link with ID (successful attach)
+	linkRes2, err := svc.Link(context.Background(), core.LinkReq{
+		ID:      dossierID,
+		Content: "Here is more sales feedback content to link.",
+		Title:   "sales_feedback.txt",
+	})
+	if err != nil {
+		t.Fatalf("Link with ID failed: %v", err)
+	}
+	if !linkRes2.OK {
+		t.Fatalf("expected link with ID to be OK")
+	}
+
+	// Recall and verify ID matches
+	recallRes, err := svc.Recall(context.Background(), core.RecallReq{ID: dossierID})
+	if err != nil {
+		t.Fatalf("Recall failed: %v", err)
+	}
+	recallData := recallRes.Data.(core.RecallResult)
+	if recallData.Frontmatter.ID != dossierID {
+		t.Errorf("expected ID %s, got %s", dossierID, recallData.Frontmatter.ID)
+	}
+}

@@ -344,6 +344,8 @@ func (s *Server) handleToolCall(ctx context.Context, id any, name string, args j
 			Name                   string `json:"name"`
 			DistilledStateMarkdown string `json:"distilled_state_markdown"`
 			FromFilePath           string `json:"from_file_path"`
+			SessionContent         string `json:"session_content"`
+			Force                  bool   `json:"force"`
 		}
 		if err := json.Unmarshal(args, &params); err != nil {
 			s.sendError(id, -32602, "Invalid params", nil)
@@ -353,12 +355,15 @@ func (s *Server) handleToolCall(ctx context.Context, id any, name string, args j
 			Name:                   params.Name,
 			DistilledStateMarkdown: params.DistilledStateMarkdown,
 			FromFilePath:           params.FromFilePath,
+			Content:                params.SessionContent,
+			Force:                  params.Force,
 		})
 
 	case "dossier_link":
 		var params struct {
-			ID           string `json:"id"`
-			FromFilePath string `json:"from_file_path"`
+			ID             string `json:"id"`
+			FromFilePath   string `json:"from_file_path"`
+			SessionContent string `json:"session_content"`
 		}
 		if err := json.Unmarshal(args, &params); err != nil {
 			s.sendError(id, -32602, "Invalid params", nil)
@@ -367,6 +372,7 @@ func (s *Server) handleToolCall(ctx context.Context, id any, name string, args j
 		res, err = s.svc.Link(ctx, core.LinkReq{
 			ID:           params.ID,
 			FromFilePath: params.FromFilePath,
+			Content:      params.SessionContent,
 		})
 
 	case "dossier_merge":
