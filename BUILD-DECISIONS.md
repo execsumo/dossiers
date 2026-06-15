@@ -20,6 +20,8 @@ This document closes the implementation-discovery questions so the build can sta
 | **B7** | Safe install behavior for modifying harness configs (Q5)? | **Never clobber.** Read → merge → write, with a timestamped backup of any file touched, fully **idempotent** (re-running `init` is a no-op if already correct). | Harness config files are the user's; corrupting them is the worst failure mode. |
 | **B8** | Per-harness hook-install confirmation (Q6)? | **Yes** — `dossier init` prompts per harness before modifying that harness's config, unless `--yes`/non-interactive. | Modifying another tool's config without consent is hostile; explicit opt-in per harness. |
 | **B9** | TUI vs plain CLI split (Q10)? | Both. Every operation is reachable via **CLI flags** (scriptable, `--json`) *and* the relevant ones via the **TUI**. The MCP/CLI/TUI all call one core service (see `ARCHITECTURE.md`) so behavior is identical. | Satisfies the "single command" capture constraint (PRD §4.10) and the agent-led happy path simultaneously. |
+| **B10** | Self-Install Path | **Idempotent stable-path copy.** Add `dossier install` (default `~/.local/bin/dossier`), and have `init` offer self-install if run from a volatile/build dir. | Keeps harness configs pointing to a stable location that won't break when rebuilding or moving the volatile build binary. |
+| **B11** | MCP Registration | **Harness config auto-wiring.** Register both MCP stdio server (command = stable path, args = `[mcp, serve]`) and lifecycle hooks during `init` after confirmation. | Connects both MCP and lifecycle hooks automatically to improve user experience without requiring manual configuration. |
 
 ---
 

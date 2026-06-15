@@ -16,11 +16,12 @@ Precedence when docs disagree: `BUILD-DECISIONS.md` > `SPEC.md` (mechanics) > `P
 
 ## Current state
 
-> **Stage: Milestone 8 completed (Project Finished) with Hook Hotfix.** The entire Dossier durable memory layer (codename *chainlink*) is fully implemented and verified.
+> **Stage: Milestone 8 completed (Project Finished) with Hook Hotfix & Stable Install Path + Auto-MCP Configuration.** The entire Dossier durable memory layer (codename *chainlink*) is fully implemented, verified, and integrated.
 > - **Milestone 1–5:** Core file store, CLI, recall, warnings, lexical search/suggestions, promote/link flow, and the MCP stdio server are implemented.
-> - **Milestone 6:** Active session binding, hook installation for Claude Code and Codex, confirmation prompts, capability detection, and non-clobbering configurations are verified. *Note: Fixed a blocking issue where hooks were written in a simplified string format that Claude Code/Codex ignored. Replaced with the correct array-of-matchers format while preserving other hooks.*
+> - **Milestone 6:** Active session binding, hook installation for Claude Code and Codex, confirmation prompts, capability detection, and non-clobbering configurations are verified.
 > - **Milestone 7:** Optimistic concurrency control, non-overlapping frontmatter auto-merging, DP LCS unified diff body conflict generation (writing to `conflicts/`), and `dossier merge` CLI/Service commands are verified.
 > - **Milestone 8:** The final Distillation Guide is authored in `assets/guide.md` and embedded in the binary to be written to `~/.dossier/context/guide.md` upon initialization. All dogfooding validations, test sweeps, and PRD success metrics have been fully met.
+> - **Stable Install & Auto-MCP Configuration (Latest):** Implemented stable binary self-install path command (`dossier install`, default `~/.local/bin/dossier`), volatile path detection on `init`, and auto-registration of both the MCP stdio server and lifecycle hooks in Claude Code and Codex user/global configuration files (preserving existing third-party configs and backing up changed files).
 
 All features are fully operational, tested, and committed directly to `main`.
 

@@ -240,6 +240,7 @@ ts: 2026-06-14T16:10:00-07:00
 `cmd/dossier/main.go`:
 - `dossier mcp serve` → builds the Service, runs the MCP stdio server (`internal/mcp`).
 - `dossier hook <session-start|session-end|pre-compaction>` → `internal/hooks` handler (reused by harness hook configs; same binary, same Service).
+- `dossier install [--dir <dir>]` → copies the binary to a stable PATH location (default `~/.local/bin/dossier`), ensuring idempotence and executable permissions.
 - everything else → cobra CLI (`internal/cli`); `--tui` or the bare `dossier` with no subcommand can launch the TUI.
 
 All three construct the Service identically via a small `wire()` that picks adapters (native vs ripgrep search, real vs fake store) — keep composition in one place.
@@ -252,7 +253,7 @@ All three construct the Service identically via a small `wire()` that picks adap
 
 ## 8. Harness adapters (the fragile edge)
 
-Each harness implements `Detect()` and `Install()`. `Install` is **idempotent, non-clobbering, and backs up** every file it touches (B7), and is **gated by per-harness confirmation** in `init` (B8). Capability detection produces the booleans in SPEC §5.1 and a Tier (§5.5/§6.1).
+Each harness implements `Detect()` and `Install()`. `Install` is **idempotent, non-clobbering, and backs up** every file it touches (B7), and is **gated by per-harness confirmation** in `init` (B8). It registers both the lifecycle hooks and the MCP server (under name `"dossier"`) using the stable binary path passed via `InstallOpts.StableBinaryPath`. Capability detection produces the booleans in SPEC §5.1 and a Tier (§5.5/§6.1).
 
 Build **Claude Code first** (B2) to a real Tier-1 implementation; codify what you learn in `docs/harness-capabilities.md`; then implement Codex and Antigravity against the same interface, letting them land on Tier 2/3 honestly. The product must **degrade visibly** — a missing capability is a warning surfaced through `Result`, never a silent no-op.
 

@@ -149,7 +149,7 @@ func TestCLIMilestone3(t *testing.T) {
 		t.Fatalf("failed to wire: %v", err)
 	}
 
-	_, err = svc.Init(context.Background(), true)
+	_, err = svc.Init(context.Background(), core.InitReq{YesToAll: true})
 	if err != nil {
 		t.Fatalf("failed to init: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestCLIMilestone5(t *testing.T) {
 		t.Fatalf("failed to wire: %v", err)
 	}
 
-	_, err = svc.Init(context.Background(), true)
+	_, err = svc.Init(context.Background(), core.InitReq{YesToAll: true})
 	if err != nil {
 		t.Fatalf("failed to init: %v", err)
 	}
@@ -371,7 +371,7 @@ func TestCLIMilestone6(t *testing.T) {
 		t.Fatalf("failed to wire: %v", err)
 	}
 
-	_, err = svc.Init(context.Background(), true)
+	_, err = svc.Init(context.Background(), core.InitReq{YesToAll: true})
 	if err != nil {
 		t.Fatalf("failed to init: %v", err)
 	}
@@ -470,7 +470,7 @@ func TestCLIMilestone7(t *testing.T) {
 		t.Fatalf("failed to wire: %v", err)
 	}
 
-	_, err = svc.Init(context.Background(), true)
+	_, err = svc.Init(context.Background(), core.InitReq{YesToAll: true})
 	if err != nil {
 		t.Fatalf("failed to init: %v", err)
 	}
@@ -579,5 +579,31 @@ func TestCLIMilestone7(t *testing.T) {
 	srcRecall := srcD.Data.(core.RecallResult)
 	if srcRecall.Frontmatter.Status != core.StatusArchived {
 		t.Errorf("expected source status to be archived, got %s", srcRecall.Frontmatter.Status)
+	}
+}
+
+func TestCLIInstall(t *testing.T) {
+	tempTargetDir := t.TempDir()
+
+	cmd := NewRootCmd()
+	cmd.SetArgs([]string{"install", "--dir", tempTargetDir, "-y"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("install cmd execution failed: %v", err)
+	}
+
+	destPath := filepath.Join(tempTargetDir, "dossier")
+	info, err := os.Stat(destPath)
+	if err != nil {
+		t.Fatalf("expected installed binary at %s, but got error: %v", destPath, err)
+	}
+	if info.IsDir() {
+		t.Fatalf("expected installed file to be a regular file, but it's a directory")
+	}
+
+	// Verify idempotency
+	cmdIdempotent := NewRootCmd()
+	cmdIdempotent.SetArgs([]string{"install", "--dir", tempTargetDir, "-y"})
+	if err := cmdIdempotent.Execute(); err != nil {
+		t.Fatalf("idempotent install execution failed: %v", err)
 	}
 }

@@ -26,7 +26,12 @@ func TestClaudeCodeHarness(t *testing.T) {
 	// Create fake .claude.json with a mix of styles to test migration and preservation
 	claudeJSONPath := filepath.Join(tempHome, ".claude.json")
 	initialConfig := map[string]any{
-		"mcpServers": map[string]any{},
+		"mcpServers": map[string]any{
+			"unrelated": map[string]any{
+				"type":    "stdio",
+				"command": "echo",
+			},
+		},
 		"hooks": map[string]any{
 			"UserPromptSubmit": []any{
 				map[string]any{
@@ -57,7 +62,7 @@ func TestClaudeCodeHarness(t *testing.T) {
 	}
 
 	// Install hooks with YesToAll = true
-	err = h.Install(core.InstallOpts{YesToAll: true})
+	err = h.Install(core.InstallOpts{YesToAll: true, StableBinaryPath: "/tmp/dossier"})
 	if err != nil {
 		t.Fatalf("failed to install: %v", err)
 	}
@@ -109,6 +114,9 @@ func TestClaudeCodeHarness(t *testing.T) {
 	if !strings.Contains(hookEntry["command"].(string), "hook session-start") {
 		t.Errorf("expected command to contain 'hook session-start', got %v", hookEntry["command"])
 	}
+	if !strings.Contains(hookEntry["command"].(string), "/tmp/dossier") {
+		t.Errorf("expected command to contain stable path /tmp/dossier, got %v", hookEntry["command"])
+	}
 
 	// Assert PreCompact was converted from string to array
 	preCompactVal, ok := hooks["PreCompact"].([]any)
@@ -128,11 +136,31 @@ func TestClaudeCodeHarness(t *testing.T) {
 		t.Fatalf("expected UserPromptSubmit to have 1 item, got %d", len(unrelatedVal))
 	}
 
+	// Assert MCP is registered and unrelated preserved
+	mcpServers, ok := updatedConfig["mcpServers"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected mcpServers map, got %T", updatedConfig["mcpServers"])
+	}
+	unrelatedMCP, ok := mcpServers["unrelated"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected unrelated MCP server to be preserved")
+	}
+	if unrelatedMCP["command"] != "echo" {
+		t.Errorf("expected unrelated command to be 'echo', got %v", unrelatedMCP["command"])
+	}
+	dossierMCP, ok := mcpServers["dossier"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected dossier MCP server to be registered")
+	}
+	if dossierMCP["command"] != "/tmp/dossier" {
+		t.Errorf("expected dossier command to be '/tmp/dossier', got %v", dossierMCP["command"])
+	}
+
 	// Test idempotency: running Install again should not create new backup and should not change config
 	files, _ := filepath.Glob(filepath.Join(tempHome, ".claude.json.*.bak"))
 	initialBackupCount := len(files)
 
-	err = h.Install(core.InstallOpts{YesToAll: true})
+	err = h.Install(core.InstallOpts{YesToAll: true, StableBinaryPath: "/tmp/dossier"})
 	if err != nil {
 		t.Fatalf("failed to install: %v", err)
 	}
@@ -162,7 +190,10 @@ func TestCodexHarness(t *testing.T) {
 	if err := os.MkdirAll(codexDir, 0755); err != nil {
 		t.Fatalf("failed to create fake .codex dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(codexDir, "config.toml"), []byte(""), 0644); err != nil {
+	initialTOML := `[mcp_servers.unrelated]
+command = "echo"
+args = []`
+	if err := os.WriteFile(filepath.Join(codexDir, "config.toml"), []byte(initialTOML), 0644); err != nil {
 		t.Fatalf("failed to write fake config.toml: %v", err)
 	}
 
@@ -198,7 +229,7 @@ func TestCodexHarness(t *testing.T) {
 	}
 
 	// Install hooks with YesToAll = true
-	err = h.Install(core.InstallOpts{YesToAll: true})
+	err = h.Install(core.InstallOpts{YesToAll: true, StableBinaryPath: "/tmp/dossier"})
 	if err != nil {
 		t.Fatalf("failed to install: %v", err)
 	}
@@ -247,6 +278,9 @@ func TestCodexHarness(t *testing.T) {
 	if !strings.Contains(hookEntry["command"].(string), "hook session-start") {
 		t.Errorf("expected command to contain 'hook session-start', got %v", hookEntry["command"])
 	}
+	if !strings.Contains(hookEntry["command"].(string), "/tmp/dossier") {
+		t.Errorf("expected command to contain stable path /tmp/dossier, got %v", hookEntry["command"])
+	}
 
 	// Assert Stop was converted from string to array
 	_, ok = hooks["Stop"].([]any)
@@ -263,11 +297,27 @@ func TestCodexHarness(t *testing.T) {
 		t.Fatalf("expected UserPromptSubmit to have 1 item, got %d", len(unrelatedVal))
 	}
 
+	// Assert config.toml has MCP registered and unrelated preserved
+	tomlBytes, err := os.ReadFile(filepath.Join(codexDir, "config.toml"))
+	if err != nil {
+		t.Fatalf("failed to read config.toml: %v", err)
+	}
+	tomlContent := string(tomlBytes)
+	if !strings.Contains(tomlContent, "[mcp_servers.unrelated]") {
+		t.Errorf("expected unrelated MCP server to be preserved in config.toml")
+	}
+	if !strings.Contains(tomlContent, "[mcp_servers.dossier]") {
+		t.Errorf("expected dossier MCP server to be registered in config.toml")
+	}
+	if !strings.Contains(tomlContent, `command = "/tmp/dossier"`) {
+		t.Errorf("expected dossier command in config.toml to be '/tmp/dossier'")
+	}
+
 	// Test idempotency: running Install again should not create new backup and should not change config
 	files, _ := filepath.Glob(filepath.Join(codexDir, "hooks.json.*.bak"))
 	initialBackupCount := len(files)
 
-	err = h.Install(core.InstallOpts{YesToAll: true})
+	err = h.Install(core.InstallOpts{YesToAll: true, StableBinaryPath: "/tmp/dossier"})
 	if err != nil {
 		t.Fatalf("failed to install: %v", err)
 	}
@@ -290,7 +340,7 @@ func TestAntigravityHarness(t *testing.T) {
 	if !caps.MCP || caps.SessionStartHook || caps.SessionEndHook || caps.PreCompactionHook || caps.TranscriptCapture {
 		t.Errorf("expected Tier 3 capabilities, got %+v", caps)
 	}
-	err = h.Install(core.InstallOpts{YesToAll: true})
+	err = h.Install(core.InstallOpts{YesToAll: true, StableBinaryPath: "/tmp/dossier"})
 	if err != nil {
 		t.Errorf("expected nil error on install, got %v", err)
 	}

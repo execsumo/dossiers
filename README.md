@@ -21,20 +21,23 @@ See [Known limitations](#known-limitations) before relying on automatic session 
 
 ## Install
 
-There is no published binary yet, so you build it from source. **You do not need to keep working inside this repo** — once built, the `dossier` binary is self-contained. Install it to a stable location on your `PATH` so its path never changes (this matters for hooks — see [Known limitations](#known-limitations)).
+There is no published binary yet, so you build it from source. **You do not need to keep working inside this repo** — once built, the `dossier` binary is self-contained. Install it to a stable location on your `PATH` using the `install` command so its path never changes:
 
 ```bash
 git clone <repo-url> dossiers
 cd dossiers
-go build -o ~/.local/bin/dossier ./cmd/dossier   # or /usr/local/bin/dossier
+go build ./cmd/dossier
+./dossier install                                  # copies the binary to stable ~/.local/bin/dossier
 which dossier                                      # confirm it's on PATH
 ```
 
-If you only want to try it without installing, `go build ./cmd/dossier` drops a `./dossier` binary in the repo and you can run it as `./dossier`.
+If you only want to try it without installing, `./dossier` can be run directly from the repo directory.
 
 ## Initialize
 
-Run `init` **once, from anywhere** — it does not care about your current directory. It creates your workspace at `~/.dossier` (config, context templates, the Distillation Guide) and reports which harnesses it detected and at what capability tier.
+Run `init` **once, from anywhere**. If Dossier detects it is running from a volatile path (such as a temporary folder or repository build folder), it will offer to self-install itself to a stable path first.
+
+It then creates your workspace at `~/.dossier` (config, context templates, the Distillation Guide) and automatically registers the Dossier MCP server and lifecycle hooks in your active harnesses.
 
 ```bash
 dossier init
@@ -61,32 +64,38 @@ Your data lives in `~/.dossier/` as plain files and **persists across restarts**
 
 ## Connect it to your agent
 
-### MCP (recommended, works today)
+`dossier init` automatically detects supported harnesses and configures both the MCP server and session hooks (`SessionStart`, `SessionEnd`, `PreCompact`) in their user/global configuration files. 
 
-Register Dossier as an MCP server so your agent can read, search, promote, and update Dossiers from inside a session:
+It does this after prompting for confirmation per harness (skipped if `-y` is passed). The installation is fully idempotent, non-clobbering (preserving other MCP servers and hooks), and backs up config files before editing.
 
+### Automatic configuration
+Simply run:
 ```bash
-# Claude Code
-claude mcp add dossier -- dossier mcp serve
+dossier init
 ```
 
-For Codex/Antigravity, add an MCP server entry pointing at `dossier mcp serve` per that tool's MCP configuration.
-
-### Session hooks (optional, see limitations)
-
-`dossier init` will offer to install lifecycle hooks (`SessionStart`, `SessionEnd`, `PreCompact`) so your open Dossiers surface automatically when a session starts and state is saved at the right moments. Pass `-y` to accept non-interactively:
-
-```bash
-dossier init -y
+If it detects Claude Code or Codex on your machine, it will offer to integrate itself:
+```
+Configure Claude Code integration (hooks + MCP server)? [y/N]: y
 ```
 
-You can also run a hook manually to see what it emits:
+### Manual configuration (if needed)
 
+If a harness cannot be automatically configured (e.g. Antigravity), Dossier will warn you during `init` and print manual setup instructions.
+
+#### MCP
+To register Dossier manually:
+- **Claude Code:** Registered in `~/.claude.json` under `"mcpServers"` (or locally via `claude mcp add dossier -- dossier mcp serve`).
+- **Codex:** Registered in `~/.codex/config.toml` under `[mcp_servers.dossier]`.
+- **Antigravity:** Add a stdio MCP server pointing to the stable binary path with arguments `["mcp", "serve"]`.
+
+#### Session hooks
+Run hooks manually to see what they emit:
 ```bash
 dossier hook session-start    # prints your Dossier library + capabilities
 ```
 
-> ⚠️ Automatic hook installation uses absolute path bindings — see [Known limitations](#known-limitations) for caveats on rebuilding or moving the binary.
+> ⚠️ Automatic hook/MCP configuration uses stable path bindings. If you relocate the binary, run `dossier install` and `dossier init` again to re-bind paths.
 
 ## Everyday use
 

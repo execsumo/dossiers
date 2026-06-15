@@ -80,8 +80,9 @@ type Tokenizer interface {
 
 // InstallOpts controls hook installation options.
 type InstallOpts struct {
-	Interactive bool
-	YesToAll    bool
+	Interactive      bool
+	YesToAll         bool
+	StableBinaryPath string
 }
 
 // Harness defines the capability detection and integration installer for a client.

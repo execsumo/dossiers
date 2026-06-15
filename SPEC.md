@@ -377,13 +377,15 @@ dossier doctor
 
 `dossier init`
 
+- Detects when running from a volatile/temporary path and offers to self-install to a stable PATH location (default `~/.local/bin/dossier`) first.
 - Creates store directories.
 - Writes default config.
 - Installs Distillation Guide.
 - Generates `context/library.md`.
 - Detects configured harnesses where possible.
+- Prompts for per-harness confirmation before updating user/global configurations to register the Dossier MCP server and lifecycle hooks, preserving existing third-party servers and hooks (never-clobber behavior).
 - Prints capability tier and warnings for Claude Code, Codex, and Antigravity.
-- Does not fail if one harness cannot support hooks; warns visibly.
+- Does not fail if a harness config cannot be updated or hooks are unsupported; warns visibly.
 
 `dossier ls`
 

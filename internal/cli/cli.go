@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
 	"dossier/internal/config"
 	"dossier/internal/core"
 	"dossier/internal/harness"
@@ -11,6 +12,7 @@ import (
 	"dossier/internal/tokenizer"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,6 +46,30 @@ func NewRootCmd() *cobra.Command {
 		Use:   "init",
 		Short: "Initialize the Dossier workspace and config",
 		Run: func(cmd *cobra.Command, args []string) {
+			execPath, err := os.Executable()
+			if err == nil && isVolatilePath(execPath) {
+				shouldInstall := false
+				if yesFlag {
+					shouldInstall = true
+				} else {
+					fmt.Printf("Dossier is running from a volatile/temporary path: %s\n", execPath)
+					fmt.Printf("Would you like to self-install to a stable location (~/.local/bin) first? [y/N]: ")
+					var resp string
+					_, _ = fmt.Scanln(&resp)
+					resp = strings.ToLower(strings.TrimSpace(resp))
+					if resp == "y" || resp == "yes" {
+						shouldInstall = true
+					}
+				}
+
+				if shouldInstall {
+					if err := runInstall("~/.local/bin", yesFlag); err != nil {
+						fmt.Printf("Self-install failed: %v\n", err)
+						os.Exit(1)
+					}
+				}
+			}
+
 			homeDir := resolveHomeDir()
 			svc, err := wire(homeDir)
 			if err != nil {
@@ -51,7 +77,10 @@ func NewRootCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
-			res, err := svc.Init(context.Background(), yesFlag)
+			res, err := svc.Init(context.Background(), core.InitReq{
+				YesToAll:         yesFlag,
+				StableBinaryPath: getStableBinaryPath(),
+			})
 			if err != nil {
 				fmt.Printf("Initialization failed: %v\n", err)
 				os.Exit(1)
@@ -91,6 +120,20 @@ func NewRootCmd() *cobra.Command {
 		},
 	}
 	initCmd.Flags().BoolVarP(&yesFlag, "yes", "y", false, "Skip confirmation prompts")
+
+	var installDirFlag string
+	installCmd := &cobra.Command{
+		Use:   "install",
+		Short: "Install the Dossier binary to a stable PATH location",
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := runInstall(installDirFlag, yesFlag); err != nil {
+				fmt.Printf("Installation failed: %v\n", err)
+				os.Exit(1)
+			}
+		},
+	}
+	installCmd.Flags().StringVar(&installDirFlag, "dir", "~/.local/bin", "Directory to install the binary to")
+	installCmd.Flags().BoolVarP(&yesFlag, "yes", "y", false, "Skip confirmation prompts")
 
 	doctorCmd := &cobra.Command{
 		Use:   "doctor",
@@ -865,6 +908,7 @@ func NewRootCmd() *cobra.Command {
 	}
 
 	rootCmd.AddCommand(initCmd)
+	rootCmd.AddCommand(installCmd)
 	rootCmd.AddCommand(doctorCmd)
 	rootCmd.AddCommand(lsCmd)
 	rootCmd.AddCommand(showCmd)
@@ -958,4 +1002,184 @@ func wire(dossierHome string) (*core.Service, error) {
 	clockAdapter := &realClock{}
 
 	return core.NewService(storeAdapter, searchAdapter, tokAdapter, hregAdapter, clockAdapter, cfg.ToCoreConfig()), nil
+}
+
+func expandTilde(path string) string {
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			return filepath.Join(home, path[2:])
+		}
+	}
+	return path
+}
+
+func isDirOnPath(dir string) bool {
+	dir = filepath.Clean(expandTilde(dir))
+	pathEnv := os.Getenv("PATH")
+	for _, p := range filepath.SplitList(pathEnv) {
+		if filepath.Clean(expandTilde(p)) == dir {
+			return true
+		}
+	}
+	return false
+}
+
+func fileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
+}
+
+func isSameFile(src, dest string) bool {
+	sInfo, err := os.Stat(src)
+	if err != nil {
+		return false
+	}
+	dInfo, err := os.Stat(dest)
+	if err != nil {
+		return false
+	}
+	if sInfo.Size() != dInfo.Size() {
+		return false
+	}
+	sHash, err := fileSHA256(src)
+	if err != nil {
+		return false
+	}
+	dHash, err := fileSHA256(dest)
+	if err != nil {
+		return false
+	}
+	return sHash == dHash
+}
+
+func copyFile(src, dest string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	dir := filepath.Dir(dest)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	tmpFile, err := os.CreateTemp(dir, "dossier-install-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmpFile.Name()
+	defer func() {
+		if tmpFile != nil {
+			tmpFile.Close()
+			os.Remove(tmpName)
+		}
+	}()
+
+	if _, err := io.Copy(tmpFile, srcFile); err != nil {
+		return err
+	}
+	if err := tmpFile.Sync(); err != nil {
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+	tmpFile = nil
+
+	if err := os.Chmod(tmpName, 0755); err != nil {
+		return err
+	}
+
+	if err := os.Rename(tmpName, dest); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func isVolatilePath(path string) bool {
+	path = strings.ToLower(path)
+	if strings.Contains(path, "/tmp/") ||
+		strings.Contains(path, "/temp/") ||
+		strings.Contains(path, "go-build") ||
+		strings.Contains(path, "/var/folders/") {
+		return true
+	}
+	wd, err := os.Getwd()
+	if err == nil {
+		if strings.HasPrefix(path, strings.ToLower(wd)) {
+			return true
+		}
+	}
+	return false
+}
+
+func runInstall(destDir string, yesToAll bool) error {
+	execPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get current executable path: %w", err)
+	}
+
+	destDir = expandTilde(destDir)
+	destPath := filepath.Join(destDir, "dossier")
+
+	if !isDirOnPath(destDir) {
+		fmt.Printf("Warning: Target directory %s is not in your PATH.\n", destDir)
+		if !yesToAll {
+			fmt.Printf("Would you like to install to /usr/local/bin instead? [y/N]: ")
+			var resp string
+			_, _ = fmt.Scanln(&resp)
+			resp = strings.ToLower(strings.TrimSpace(resp))
+			if resp == "y" || resp == "yes" {
+				destDir = "/usr/local/bin"
+				destPath = filepath.Join(destDir, "dossier")
+			}
+		}
+	}
+
+	if isSameFile(execPath, destPath) {
+		fmt.Printf("Dossier is already installed and up to date at %s\n", destPath)
+		return nil
+	}
+
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", destDir, err)
+	}
+
+	err = copyFile(execPath, destPath)
+	if err != nil {
+		return fmt.Errorf("failed to copy binary to %s: %w", destPath, err)
+	}
+
+	fmt.Printf("Dossier successfully installed to %s\n", destPath)
+	return nil
+}
+
+func getStableBinaryPath() string {
+	home, err := os.UserHomeDir()
+	if err == nil {
+		p := filepath.Join(home, ".local", "bin", "dossier")
+		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			return p
+		}
+	}
+	p2 := "/usr/local/bin/dossier"
+	if info, err := os.Stat(p2); err == nil && !info.IsDir() {
+		return p2
+	}
+	exec, err := os.Executable()
+	if err == nil {
+		return exec
+	}
+	return "dossier"
 }

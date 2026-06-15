@@ -2,6 +2,7 @@ package harness
 
 import (
 	"dossier/internal/core"
+	"fmt"
 )
 
 // AntigravityHarness implements capability detection for Antigravity.
@@ -33,7 +34,10 @@ func (a *AntigravityHarness) Detect() (core.Capabilities, error) {
 	}, nil
 }
 
-// Install stub.
+// Install prints a warning since Antigravity does not support auto-registration.
 func (a *AntigravityHarness) Install(opts core.InstallOpts) error {
+	fmt.Printf("Warning: Antigravity MCP auto-registration is not supported. Please configure the MCP server manually in your client settings.\n")
+	fmt.Printf("  Command: %s\n", opts.StableBinaryPath)
+	fmt.Printf("  Args:    [mcp serve]\n")
 	return nil
 }

@@ -82,11 +82,48 @@ Uses a similar structure but without the `"matcher"` key:
 }
 ```
 
-### Absolute Binary-Path Caveat (Dangling Hooks)
-During `dossier init`, the hook installer resolves the absolute path of the current `dossier` executable (`os.Executable()`) and writes it directly into the harness config hooks.
+### Stable Binary-Path Installation and MCP Configuration
 
-> [!WARNING]
-> **Dangling Hook Paths:** If you move the compiled `dossier` binary, rename it, or compile a new version in a different directory, the harness hooks will continue trying to execute the old absolute path and will fail silently or loudly.
->
-> **Resolution:** You must re-run `dossier init` from the new binary location to update the configuration paths automatically and idempotently.
+To prevent dangling hook paths and ensure a reliable, persistent connection, Dossier uses a stable, self-managed path for all harness integrations.
 
+#### Stable Path Installation (`dossier install`)
+Users can install the Dossier binary to a stable PATH location using the `dossier install` command.
+- **Default Path:** `~/.local/bin/dossier`
+- **Override Flag:** `--dir` (e.g. `dossier install --dir /usr/local/bin`)
+- **Self-Install on `init`:** Running `dossier init` from a volatile directory (such as a build cache, temporary directory, or repository workspace) will detect the environment and prompt the user to install to the stable location first.
+
+#### MCP Config Schemas and Locations
+
+##### Claude Code
+- **Location:** `~/.claude.json` (user scope)
+- **Configuration Block:**
+```json
+{
+  "mcpServers": {
+    "dossier": {
+      "type": "stdio",
+      "command": "/Users/hgill/.local/bin/dossier",
+      "args": [
+        "mcp",
+        "serve"
+      ]
+    }
+  }
+}
+```
+
+##### Codex
+- **Location:** `~/.codex/config.toml`
+- **Configuration Block:**
+```toml
+[mcp_servers.dossier]
+command = "/Users/hgill/.local/bin/dossier"
+args = [
+    "mcp",
+    "serve",
+]
+```
+
+##### Antigravity
+- **Location:** Managed manually by client settings or plugins.
+- **Degradation:** Dossier cannot modify Antigravity settings automatically. During installation, it warns the user and provides instructions on configuring the stdio MCP server manually.

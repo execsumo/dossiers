@@ -60,8 +60,14 @@ func NewService(store Store, search Searcher, tok Tokenizer, hreg HarnessRegistr
 	}
 }
 
+// InitReq represents the request parameters for service initialization.
+type InitReq struct {
+	YesToAll         bool
+	StableBinaryPath string
+}
+
 // Init initializes the store directories, writes default configs and guide.
-func (s *Service) Init(ctx context.Context, yesToAll bool) (Result, error) {
+func (s *Service) Init(ctx context.Context, req InitReq) (Result, error) {
 	// For Milestone 1 baseline, we delegate to the store's Init method.
 	if err := s.store.Init(); err != nil {
 		return Result{OK: false}, WrapError(ErrInternal, "failed to initialize local store", err)
@@ -69,6 +75,11 @@ func (s *Service) Init(ctx context.Context, yesToAll bool) (Result, error) {
 
 	warnings := []Warning{}
 	data := make(map[string]any)
+
+	stablePath := req.StableBinaryPath
+	if stablePath == "" {
+		stablePath = "dossier"
+	}
 
 	// Detect harnesses and construct the capability tiers details
 	harnesses := s.hreg.All()
@@ -87,15 +98,19 @@ func (s *Service) Init(ctx context.Context, yesToAll bool) (Result, error) {
 		if h.Name() == "codex" && !caps.TranscriptCapture {
 			warnings = append(warnings, Warning("Codex transcript archive unavailable. Dossier will say this at session start."))
 		}
+		if h.Name() == "antigravity" {
+			warnings = append(warnings, Warning(fmt.Sprintf("Antigravity MCP auto-registration is not supported. Please configure the MCP server manually: command=%s, args=[mcp, serve]", stablePath)))
+		}
 
-		// Install the hook if supported
-		if err == nil && (caps.SessionStartHook || caps.SessionEndHook) {
+		// Install the hook and MCP if supported
+		if err == nil && (caps.SessionStartHook || caps.SessionEndHook || caps.MCP) {
 			installErr := h.Install(InstallOpts{
-				Interactive: !yesToAll,
-				YesToAll:    yesToAll,
+				Interactive:      !req.YesToAll,
+				YesToAll:         req.YesToAll,
+				StableBinaryPath: stablePath,
 			})
 			if installErr != nil {
-				warnings = append(warnings, Warning(fmt.Sprintf("Failed to install hooks for %s: %v", h.Name(), installErr)))
+				warnings = append(warnings, Warning(fmt.Sprintf("Failed to install for %s: %v", h.Name(), installErr)))
 			}
 		}
 	}
