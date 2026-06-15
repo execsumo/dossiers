@@ -89,7 +89,7 @@ func isClaudeCodeMCPConfigured(configMap map[string]any, stablePath string) bool
 	return true
 }
 
-// Install configures lifecycle hooks and MCP registration in settings.json or .claude.json.
+// Install configures lifecycle hooks in settings.json (or .claude.json as fallback) and MCP registration ALWAYS in .claude.json.
 func (c *ClaudeCodeHarness) Install(opts core.InstallOpts) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -99,27 +99,15 @@ func (c *ClaudeCodeHarness) Install(opts core.InstallOpts) error {
 	claudeJSONPath := filepath.Join(home, ".claude.json")
 	settingsPath := filepath.Join(home, ".claude", "settings.json")
 
-	var configPath string
+	// Determine where hooks should be written
+	var hooksPath string
 	if _, err := os.Stat(settingsPath); err == nil {
-		configPath = settingsPath
+		hooksPath = settingsPath
 	} else if _, err := os.Stat(claudeJSONPath); err == nil {
-		configPath = claudeJSONPath
+		hooksPath = claudeJSONPath
 	} else {
+		// If neither exists, skip installation entirely
 		return nil
-	}
-
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return fmt.Errorf("failed to read Claude Code config: %w", err)
-	}
-
-	var configMap map[string]any
-	if len(data) > 0 {
-		if err := json.Unmarshal(data, &configMap); err != nil {
-			configMap = make(map[string]any)
-		}
-	} else {
-		configMap = make(map[string]any)
 	}
 
 	stablePath := opts.StableBinaryPath
@@ -132,7 +120,21 @@ func (c *ClaudeCodeHarness) Install(opts core.InstallOpts) error {
 	}
 	execCmd := fmt.Sprintf("%s hook", stablePath)
 
-	hooksVal, ok := configMap["hooks"]
+	// 1. Read hooks configuration
+	hooksData, err := os.ReadFile(hooksPath)
+	if err != nil {
+		return fmt.Errorf("failed to read Claude Code hooks config: %w", err)
+	}
+	var hooksConfigMap map[string]any
+	if len(hooksData) > 0 {
+		if err := json.Unmarshal(hooksData, &hooksConfigMap); err != nil {
+			hooksConfigMap = make(map[string]any)
+		}
+	} else {
+		hooksConfigMap = make(map[string]any)
+	}
+
+	hooksVal, ok := hooksConfigMap["hooks"]
 	var hooksMap map[string]any
 	if ok {
 		hooksMap, _ = hooksVal.(map[string]any)
@@ -148,9 +150,48 @@ func (c *ClaudeCodeHarness) Install(opts core.InstallOpts) error {
 	hooksOk := isHookConfigured(hooksMap["SessionStart"], startCmd) &&
 		isHookConfigured(hooksMap["SessionEnd"], endCmd) &&
 		isHookConfigured(hooksMap["PreCompact"], preCompactCmd)
-	mcpOk := isClaudeCodeMCPConfigured(configMap, stablePath)
 
-	if hooksOk && mcpOk {
+	// Migration: older versions mistakenly wrote the dossier MCP entry into the
+	// hooks file (settings.json). MCP servers belong in ~/.claude.json; strip any
+	// stale entry from the hooks file so it doesn't linger as dead config.
+	staleMCPInHooks := false
+	if hooksPath != claudeJSONPath {
+		if msVal, ok := hooksConfigMap["mcpServers"].(map[string]any); ok {
+			if _, has := msVal["dossier"]; has {
+				delete(msVal, "dossier")
+				if len(msVal) == 0 {
+					delete(hooksConfigMap, "mcpServers")
+				} else {
+					hooksConfigMap["mcpServers"] = msVal
+				}
+				staleMCPInHooks = true
+			}
+		}
+	}
+
+	// 2. Read MCP configuration (ALWAYS ~/.claude.json)
+	var mcpData []byte
+	mcpExists := false
+	if _, err := os.Stat(claudeJSONPath); err == nil {
+		mcpExists = true
+		mcpData, err = os.ReadFile(claudeJSONPath)
+		if err != nil {
+			return fmt.Errorf("failed to read Claude Code MCP config: %w", err)
+		}
+	}
+
+	var mcpConfigMap map[string]any
+	if len(mcpData) > 0 {
+		if err := json.Unmarshal(mcpData, &mcpConfigMap); err != nil {
+			mcpConfigMap = make(map[string]any)
+		}
+	} else {
+		mcpConfigMap = make(map[string]any)
+	}
+
+	mcpOk := isClaudeCodeMCPConfigured(mcpConfigMap, stablePath)
+
+	if hooksOk && mcpOk && !staleMCPInHooks {
 		return nil
 	}
 
@@ -164,38 +205,72 @@ func (c *ClaudeCodeHarness) Install(opts core.InstallOpts) error {
 		}
 	}
 
-	backupPath := fmt.Sprintf("%s.%d.bak", configPath, time.Now().Unix())
-	if err := os.WriteFile(backupPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to create config backup: %w", err)
-	}
+	timestamp := time.Now().Unix()
 
-	// Update hooks
-	hooksMap["SessionStart"] = updateHookArray(hooksMap["SessionStart"], startCmd, "hook session-start", true)
-	hooksMap["SessionEnd"] = updateHookArray(hooksMap["SessionEnd"], endCmd, "hook session-end", true)
-	hooksMap["PreCompact"] = updateHookArray(hooksMap["PreCompact"], preCompactCmd, "hook pre-compaction", true)
-	configMap["hooks"] = hooksMap
-
-	// Update MCP
-	mcpServersMap := make(map[string]any)
-	if mVal, ok := configMap["mcpServers"]; ok {
-		if m, ok := mVal.(map[string]any); ok {
-			mcpServersMap = m
+	// Backup hooks path if hooks are changing (or stale MCP is being stripped) and file exists
+	if (!hooksOk || staleMCPInHooks) && len(hooksData) > 0 {
+		backupPath := fmt.Sprintf("%s.%d.bak", hooksPath, timestamp)
+		if err := os.WriteFile(backupPath, hooksData, 0644); err != nil {
+			return fmt.Errorf("failed to create hooks config backup: %w", err)
 		}
 	}
-	mcpServersMap["dossier"] = map[string]any{
-		"type":    "stdio",
-		"command": stablePath,
-		"args":    []any{"mcp", "serve"},
-	}
-	configMap["mcpServers"] = mcpServersMap
 
-	newData, err := json.MarshalIndent(configMap, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
+	// Backup MCP path if MCP is changing and file exists
+	if !mcpOk && mcpExists && len(mcpData) > 0 {
+		// Avoid backing up the same file twice if hooksPath == claudeJSONPath
+		if hooksPath != claudeJSONPath {
+			backupPath := fmt.Sprintf("%s.%d.bak", claudeJSONPath, timestamp)
+			if err := os.WriteFile(backupPath, mcpData, 0644); err != nil {
+				return fmt.Errorf("failed to create MCP config backup: %w", err)
+			}
+		}
 	}
 
-	if err := os.WriteFile(configPath, newData, 0644); err != nil {
-		return fmt.Errorf("failed to write config: %w", err)
+	// Update and write hooks if needed (hook change or stale-MCP migration)
+	if !hooksOk || staleMCPInHooks {
+		if !hooksOk {
+			hooksMap["SessionStart"] = updateHookArray(hooksMap["SessionStart"], startCmd, "hook session-start", true)
+			hooksMap["SessionEnd"] = updateHookArray(hooksMap["SessionEnd"], endCmd, "hook session-end", true)
+			hooksMap["PreCompact"] = updateHookArray(hooksMap["PreCompact"], preCompactCmd, "hook pre-compaction", true)
+			hooksConfigMap["hooks"] = hooksMap
+		}
+
+		// If hooksPath == claudeJSONPath, we merge MCP updates into the same map before writing
+		if hooksPath == claudeJSONPath {
+			mcpConfigMap = hooksConfigMap
+		} else {
+			newHooksData, err := json.MarshalIndent(hooksConfigMap, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal hooks config: %w", err)
+			}
+			if err := os.WriteFile(hooksPath, newHooksData, 0644); err != nil {
+				return fmt.Errorf("failed to write hooks config: %w", err)
+			}
+		}
+	}
+
+	// Update and write MCP if needed
+	if !mcpOk || hooksPath == claudeJSONPath {
+		mcpServersMap := make(map[string]any)
+		if mVal, ok := mcpConfigMap["mcpServers"]; ok {
+			if m, ok := mVal.(map[string]any); ok {
+				mcpServersMap = m
+			}
+		}
+		mcpServersMap["dossier"] = map[string]any{
+			"type":    "stdio",
+			"command": stablePath,
+			"args":    []any{"mcp", "serve"},
+		}
+		mcpConfigMap["mcpServers"] = mcpServersMap
+
+		newMcpData, err := json.MarshalIndent(mcpConfigMap, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal MCP config: %w", err)
+		}
+		if err := os.WriteFile(claudeJSONPath, newMcpData, 0644); err != nil {
+			return fmt.Errorf("failed to write MCP config: %w", err)
+		}
 	}
 
 	return nil

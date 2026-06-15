@@ -171,6 +171,113 @@ func TestClaudeCodeHarness(t *testing.T) {
 	}
 }
 
+// TestClaudeCodeHarnessSplitConfig covers the real-world layout where both
+// ~/.claude/settings.json and ~/.claude.json exist: hooks must go to settings.json,
+// the MCP server must go to ~/.claude.json, and a stale dossier MCP entry that an
+// older buggy version wrote into settings.json must be stripped (migration).
+func TestClaudeCodeHarnessSplitConfig(t *testing.T) {
+	tempHome := t.TempDir()
+	t.Setenv("HOME", tempHome)
+
+	claudeDir := filepath.Join(tempHome, ".claude")
+	if err := os.MkdirAll(claudeDir, 0755); err != nil {
+		t.Fatalf("failed to create .claude dir: %v", err)
+	}
+	settingsPath := filepath.Join(claudeDir, "settings.json")
+	claudeJSONPath := filepath.Join(tempHome, ".claude.json")
+
+	// settings.json holds hooks plus a STALE dossier MCP entry (the bug) and an unrelated MCP server.
+	settings := map[string]any{
+		"hooks": map[string]any{
+			"UserPromptSubmit": []any{
+				map[string]any{"matcher": "*", "hooks": []any{
+					map[string]any{"type": "command", "command": "echo unrelated"},
+				}},
+			},
+		},
+		"mcpServers": map[string]any{
+			"dossier":   map[string]any{"type": "stdio", "command": "dossier", "args": []any{"mcp", "serve"}},
+			"unrelated": map[string]any{"type": "stdio", "command": "echo"},
+		},
+	}
+	settingsBytes, _ := json.Marshal(settings)
+	if err := os.WriteFile(settingsPath, settingsBytes, 0644); err != nil {
+		t.Fatalf("failed to write settings.json: %v", err)
+	}
+
+	// .claude.json holds an unrelated MCP server only.
+	claudeJSON := map[string]any{
+		"mcpServers": map[string]any{
+			"codegraph": map[string]any{"type": "stdio", "command": "codegraph", "args": []any{"serve"}},
+		},
+	}
+	claudeJSONBytes, _ := json.Marshal(claudeJSON)
+	if err := os.WriteFile(claudeJSONPath, claudeJSONBytes, 0644); err != nil {
+		t.Fatalf("failed to write .claude.json: %v", err)
+	}
+
+	h := NewClaudeCodeHarness("/tmp/dossier")
+	if err := h.Install(core.InstallOpts{YesToAll: true, StableBinaryPath: "/tmp/dossier"}); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+
+	// settings.json: hooks installed, unrelated hook preserved, stale dossier MCP STRIPPED, unrelated MCP preserved.
+	var gotSettings map[string]any
+	b, _ := os.ReadFile(settingsPath)
+	if err := json.Unmarshal(b, &gotSettings); err != nil {
+		t.Fatalf("failed to parse settings.json: %v", err)
+	}
+	sHooks, _ := gotSettings["hooks"].(map[string]any)
+	if _, ok := sHooks["SessionStart"].([]any); !ok {
+		t.Errorf("expected SessionStart hook in settings.json, got %T", sHooks["SessionStart"])
+	}
+	if _, ok := sHooks["UserPromptSubmit"].([]any); !ok {
+		t.Errorf("expected unrelated UserPromptSubmit hook preserved in settings.json")
+	}
+	if sMCP, ok := gotSettings["mcpServers"].(map[string]any); ok {
+		if _, has := sMCP["dossier"]; has {
+			t.Errorf("stale dossier MCP entry should have been stripped from settings.json")
+		}
+		if _, has := sMCP["unrelated"]; !has {
+			t.Errorf("unrelated MCP server should be preserved in settings.json")
+		}
+	}
+
+	// .claude.json: dossier MCP registered with stable path, codegraph preserved.
+	var gotClaude map[string]any
+	b, _ = os.ReadFile(claudeJSONPath)
+	if err := json.Unmarshal(b, &gotClaude); err != nil {
+		t.Fatalf("failed to parse .claude.json: %v", err)
+	}
+	cMCP, ok := gotClaude["mcpServers"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected mcpServers in .claude.json, got %T", gotClaude["mcpServers"])
+	}
+	dossierMCP, ok := cMCP["dossier"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected dossier MCP registered in .claude.json")
+	}
+	if dossierMCP["command"] != "/tmp/dossier" {
+		t.Errorf("expected dossier MCP command to be stable path '/tmp/dossier', got %v", dossierMCP["command"])
+	}
+	if _, has := cMCP["codegraph"]; !has {
+		t.Errorf("codegraph MCP server should be preserved in .claude.json")
+	}
+
+	// Idempotency: re-running Install creates no new backups.
+	settingsBaks, _ := filepath.Glob(settingsPath + ".*.bak")
+	claudeBaks, _ := filepath.Glob(claudeJSONPath + ".*.bak")
+	before := len(settingsBaks) + len(claudeBaks)
+	if err := h.Install(core.InstallOpts{YesToAll: true, StableBinaryPath: "/tmp/dossier"}); err != nil {
+		t.Fatalf("second install failed: %v", err)
+	}
+	settingsBaks, _ = filepath.Glob(settingsPath + ".*.bak")
+	claudeBaks, _ = filepath.Glob(claudeJSONPath + ".*.bak")
+	if after := len(settingsBaks) + len(claudeBaks); after != before {
+		t.Errorf("expected no new backups on idempotent run, got %d (was %d)", after, before)
+	}
+}
+
 func TestCodexHarness(t *testing.T) {
 	tempHome := t.TempDir()
 	t.Setenv("HOME", tempHome)

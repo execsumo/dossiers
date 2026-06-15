@@ -95,7 +95,8 @@ Users can install the Dossier binary to a stable PATH location using the `dossie
 #### MCP Config Schemas and Locations
 
 ##### Claude Code
-- **Location:** `~/.claude.json` (user scope)
+- **Location:** `~/.claude.json` (user scope). This is distinct from hooks, which live in `~/.claude/settings.json`. Claude Code reads user-scope MCP servers only from `~/.claude.json`, so the two writes must not be conflated.
+- **Migration:** Older builds mistakenly wrote the `dossier` MCP entry into `~/.claude/settings.json` (where Claude Code ignores it). `init` now strips any stale `dossier` entry from `settings.json` and registers it in `~/.claude.json`, healing an already-polluted config idempotently.
 - **Configuration Block:**
 ```json
 {
