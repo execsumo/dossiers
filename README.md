@@ -1,7 +1,7 @@
 # Dossier
 
 > Codename: *chainlink* · A local, single-user durable memory layer for agent-driven work.
-> Status: **pre-implementation** — specced and ready to build. See `HANDOFF.md`.
+> Status: **Milestone 1 completed** — skeletons, harnesses verified, and init/doctor ready. See `HANDOFF.md`.
 
 Dossier keeps your long-running agent work alive across sessions and across tools — without the bloat. You promote any agent session into a **Dossier**: the critical state of a topic (situation, decisions and who made them, open questions, next action) with the noise stripped out, backed by an **Archive** of the raw material that supports it. Every material claim cites its source. Your open Dossiers surface automatically when you start a supported agent session, and you resume with exactly the distilled context you need — with the full archive one search away.
 
@@ -9,21 +9,20 @@ v1 supports **Claude Code, Codex, and Antigravity** with visible capability tier
 
 ## Status
 
-Not yet implemented. The project is fully specified and ready for development:
+Milestone 1 is fully implemented. The Go module is scaffolded, CLI/core/store/harness packages are built, capabilities of harnesses verified, and `init` and `doctor` command baselines are functional and tested.
 
-- `PRD.md` / `PRFAQ.md` — product requirements and narrative.
-- `SPEC.md` — technical specification (data model, CLI, MCP, algorithms, acceptance criteria).
-- `BUILD-DECISIONS.md` — settled implementation choices.
-- `ARCHITECTURE.md` — how the code is structured (Go, ports-and-adapters).
-- `CLAUDE.md` / `AGENTS.md` — working rules for contributors/agents.
-- `HANDOFF.md` — start here.
+## Install & Build
 
-## Install
-
-> _To be written once the binary exists._
+Build the single self-contained binary:
 
 ```bash
-dossier init
+go build ./cmd/dossier
+```
+
+Initialize your Dossier workspace (creates `~/.dossier`, configs, context templates, and registers capabilities):
+
+```
+./dossier init
 ```
 
 Then open a supported agent session — it surfaces your Dossier library, tells you the capabilities available in that harness, and helps you continue an existing topic or promote the current conversation into a new one.
