@@ -16,9 +16,13 @@ Precedence when docs disagree: `BUILD-DECISIONS.md` > `SPEC.md` (mechanics) > `P
 
 ## Current state
 
-Dossier is a local, single-user durable memory layer for agent-driven work across Claude Code, Codex, and Antigravity. **Planning and product strategy are complete.** The project is ready to move into implementation.
+> **Stage: handed off to the dev agent for implementation.** Planning, product strategy, and build prep are complete; coding has not started.
 
-The product uncertainties were resolved in `PRD.md`/`PRFAQ.md`, the technical contract is in `SPEC.md`, the build choices the SPEC left open are resolved in `BUILD-DECISIONS.md`, and the code structure is seeded in `ARCHITECTURE.md`. No code exists yet.
+Dossier is a local, single-user durable memory layer for agent-driven work across Claude Code, Codex, and Antigravity.
+
+- The product uncertainties were resolved in `PRD.md`/`PRFAQ.md`, the technical contract is in `SPEC.md`, the build choices the SPEC left open are resolved in `BUILD-DECISIONS.md`, and the code structure is seeded in `ARCHITECTURE.md`.
+- The repo is live on GitHub: `origin` → `execsumo/dossiers`, default branch `main`. The initial commit (`0d3695f`) is the untouched planning baseline — leave it intact and build forward from branches.
+- **No code exists yet.** The next agent's job is to implement, milestone by milestone, in strict conformance with the docs above.
 
 ## Resolved decisions (the foundation)
 
@@ -42,6 +46,23 @@ Milestone 1 (SPEC §15, sequenced in `ARCHITECTURE.md` §12):
 4. **Validate Claude Code for real** — MCP registration, SessionStart/session-end/pre-compaction hooks (incl. `/clear`, `/exit`), raw transcript access, stable session id, context injection, install/notice surfacing. Record findings in **`docs/harness-capabilities.md`**.
 
 Get the Store contract and the revision/concurrency logic (`ARCHITECTURE.md` §5–6) right early — everything writes through them.
+
+## Workflow & validation
+
+- **Branch off `main`; one focused PR per milestone** (SPEC §15, sequenced in `ARCHITECTURE.md` §12). Keep the initial commit as the pristine baseline.
+- **Conformance check per PR:** in each PR description, include a table mapping the relevant SPEC §14 acceptance criteria (and any `BUILD-DECISIONS.md` items touched) to the tests/behavior that satisfy them, and explicitly note anything not yet met. This is how the work is validated against the docs.
+- **Definition of done** (`CLAUDE.md`): compiles; `go vet` + `gofmt` clean; tests pass; relevant §14 criteria demonstrably met; `ARCHITECTURE.md` updated if structure changed.
+- **Flag, don't diverge:** if a harness can't do what a Tier assumes, or a contract is ambiguous or proves wrong, stop and surface it for human review. Record the finding (capability gaps → `docs/harness-capabilities.md`; new decisions → an ADR) before changing course. Do not silently work around a settled decision.
+
+## Docs to build and maintain (the dev agent owns these)
+
+- **`docs/harness-capabilities.md`** — required Milestone 1 deliverable; the real capability matrix and Tier per harness (see "How to start" step 4).
+- **`docs/adr/NNNN-title.md`** — one Architecture Decision Record per *new* decision not already settled in `BUILD-DECISIONS.md` (library choices, contract refinements). Keeps divergence auditable.
+- **`ARCHITECTURE.md`** — keep current; update it in the same PR as any structural change.
+- **`HANDOFF.md`** (this file) — update the status section as each milestone lands so any agent can resume cleanly. (You're building a durable-handoff tool — dogfood the pattern.)
+- **`assets/guide.md`** — author the shipped Distillation Guide per SPEC §10, with good/bad examples; back it with golden-file fixtures.
+- **`README.md`** — fill in real install/usage/caveats once the binary and commands exist.
+- **Package-level godoc** on each `internal` package describing its role and the port(s) it implements or depends on.
 
 ## Watchouts (hard rules — also in CLAUDE.md)
 
