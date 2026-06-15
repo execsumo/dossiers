@@ -358,3 +358,99 @@ func TestCLIMilestone5(t *testing.T) {
 		t.Errorf("expected ID %s, got %s", dossierID, recallData.Frontmatter.ID)
 	}
 }
+
+func TestCLIMilestone6(t *testing.T) {
+	tempHome, err := os.MkdirTemp("", "dossier-cli-m6-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp home: %v", err)
+	}
+	defer os.RemoveAll(tempHome)
+
+	svc, err := wire(tempHome)
+	if err != nil {
+		t.Fatalf("failed to wire: %v", err)
+	}
+
+	_, err = svc.Init(context.Background(), true)
+	if err != nil {
+		t.Fatalf("failed to init: %v", err)
+	}
+
+	// 1. Promote a dossier
+	promRes, err := svc.Promote(context.Background(), core.PromoteReq{
+		Name:                   "Active Session Dossier",
+		DistilledStateMarkdown: "# Initial Distilled State",
+	})
+	if err != nil {
+		t.Fatalf("Promote failed: %v", err)
+	}
+	dossierID := promRes.Data.(string)
+
+	// 2. Switch to this dossier to bind it to a session
+	sessionID := "sess_test_123"
+	switchRes, err := svc.Switch(context.Background(), core.SwitchReq{
+		ID:        dossierID,
+		SessionID: sessionID,
+	})
+	if err != nil {
+		t.Fatalf("Switch failed: %v", err)
+	}
+	if !switchRes.OK {
+		t.Fatalf("expected Switch result to be OK")
+	}
+
+	// 3. Verify Active binding
+	activeRes, err := svc.Active(context.Background(), core.ActiveReq{SessionID: sessionID})
+	if err != nil {
+		t.Fatalf("Active failed: %v", err)
+	}
+	binding := activeRes.Data.(*core.SessionBinding)
+	if binding.DossierID != dossierID {
+		t.Errorf("expected bound DossierID to be %s, got %s", dossierID, binding.DossierID)
+	}
+
+	// 4. Run SessionStart hook and verify context payload injection
+	contextPayload, err := svc.SessionStart(context.Background(), sessionID)
+	if err != nil {
+		t.Fatalf("SessionStart failed: %v", err)
+	}
+	if !strings.Contains(contextPayload, "# Initial Distilled State") {
+		t.Errorf("expected Distilled State in session-start context, got:\n%s", contextPayload)
+	}
+	if !strings.Contains(contextPayload, "Active Session Dossier") {
+		t.Errorf("expected dossier name in session-start context, got:\n%s", contextPayload)
+	}
+
+	// 5. Run SessionEnd hook with new distilled state and transcript
+	err = svc.SessionEnd(context.Background(), sessionID, "# Updated Distilled State", "This is the final transcript of the session.")
+	if err != nil {
+		t.Fatalf("SessionEnd failed: %v", err)
+	}
+
+	// 6. Verify distilled state updated on disk
+	recallRes, err := svc.Recall(context.Background(), core.RecallReq{ID: dossierID})
+	if err != nil {
+		t.Fatalf("Recall after session end failed: %v", err)
+	}
+	recallData := recallRes.Data.(core.RecallResult)
+	if recallData.DistilledState != "# Updated Distilled State" {
+		t.Errorf("expected updated distilled state, got %q", recallData.DistilledState)
+	}
+
+	// Verify transcript was saved as an artifact
+	artPath := filepath.Join(tempHome, "active-session-dossier", "artifacts")
+	entries, err := os.ReadDir(artPath)
+	if err != nil {
+		t.Fatalf("failed to read artifacts dir: %v", err)
+	}
+	foundTranscript := false
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "art_transcript") {
+			foundTranscript = true
+			break
+		}
+	}
+	if !foundTranscript {
+		t.Errorf("expected transcript artifact to be written in artifacts/")
+	}
+}

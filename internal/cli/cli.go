@@ -28,6 +28,7 @@ var (
 	distilledFlag     string
 	fromFileFlag      string
 	forceFlag         bool
+	sessionFlag       string
 )
 
 // Execute runs the cobra command parser.
@@ -540,6 +541,128 @@ func Execute() {
 	linkCmd.Flags().StringVar(&fromFileFlag, "from-file", "", "Path to session content file")
 	linkCmd.Flags().BoolVar(&jsonFlag, "json", false, "Output results in JSON format")
 
+	activeCmd := &cobra.Command{
+		Use:   "active",
+		Short: "Show the active dossier bound to the current session",
+		Run: func(cmd *cobra.Command, args []string) {
+			homeDir := resolveHomeDir()
+			svc, err := wire(homeDir)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+
+			sessID := resolveSessionID()
+			res, err := svc.Active(context.Background(), core.ActiveReq{SessionID: sessID})
+			if err != nil {
+				if jsonFlag {
+					printJSON(map[string]any{"ok": false, "error": err.Error()})
+					os.Exit(1)
+				}
+				fmt.Printf("No active dossier bound to this session: %v\n", err)
+				os.Exit(1)
+			}
+
+			if jsonFlag {
+				printJSON(res.Data)
+				return
+			}
+
+			binding := res.Data.(*core.SessionBinding)
+			fmt.Printf("Active Dossier ID:  %s\n", binding.DossierID)
+			fmt.Printf("Bound At:           %s\n", binding.BoundAt.Format(time.RFC3339))
+			fmt.Printf("Last Seen Revision: %s\n", binding.LastSeenRevision)
+		},
+	}
+	activeCmd.Flags().StringVar(&sessionFlag, "session", "", "Session ID to check")
+	activeCmd.Flags().BoolVar(&jsonFlag, "json", false, "Output results in JSON format")
+
+	switchCmd := &cobra.Command{
+		Use:   "switch <slug-or-id>",
+		Short: "Switch the active dossier binding for the session",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			homeDir := resolveHomeDir()
+			svc, err := wire(homeDir)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+
+			sessID := resolveSessionID()
+			res, err := svc.Switch(context.Background(), core.SwitchReq{ID: args[0], SessionID: sessID})
+			if err != nil {
+				fmt.Printf("Switch failed: %v\n", err)
+				os.Exit(1)
+			}
+
+			if jsonFlag {
+				printJSON(res.Data)
+				return
+			}
+
+			recall := res.Data.(core.RecallResult)
+			fmt.Printf("Switched active dossier to: %s (%s)\n", recall.Frontmatter.Name, recall.Frontmatter.ID)
+			fmt.Printf("Revision: %s\n", recall.Revision)
+		},
+	}
+	switchCmd.Flags().StringVar(&sessionFlag, "session", "", "Session ID to bind")
+	switchCmd.Flags().BoolVar(&jsonFlag, "json", false, "Output results in JSON format")
+
+	hookCmd := &cobra.Command{
+		Use:   "hook <session-start|session-end|pre-compaction>",
+		Short: "Run lifecycle integration hooks",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			homeDir := resolveHomeDir()
+			svc, err := wire(homeDir)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+
+			var payload struct {
+				SessionID      string `json:"session_id"`
+				HookEventName  string `json:"hook_event_name"`
+				Transcript     string `json:"transcript"`
+				DistilledState string `json:"distilled_state"`
+			}
+
+			stat, _ := os.Stdin.Stat()
+			if (stat.Mode() & os.ModeCharDevice) == 0 {
+				dec := json.NewDecoder(os.Stdin)
+				_ = dec.Decode(&payload)
+			}
+
+			sessID := payload.SessionID
+			if sessID == "" {
+				sessID = resolveSessionID()
+			}
+
+			switch args[0] {
+			case "session-start":
+				resText, err := svc.SessionStart(context.Background(), sessID)
+				if err != nil {
+					fmt.Printf("Session start hook failed: %v\n", err)
+					os.Exit(1)
+				}
+				fmt.Print(resText)
+
+			case "session-end", "pre-compaction":
+				err := svc.SessionEnd(context.Background(), sessID, payload.DistilledState, payload.Transcript)
+				if err != nil {
+					fmt.Printf("Session end hook failed: %v\n", err)
+					os.Exit(1)
+				}
+				fmt.Println("Session hook completed successfully.")
+
+			default:
+				fmt.Printf("Unknown hook event: %s\n", args[0])
+				os.Exit(1)
+			}
+		},
+	}
+
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(doctorCmd)
 	rootCmd.AddCommand(lsCmd)
@@ -551,6 +674,9 @@ func Execute() {
 	rootCmd.AddCommand(mcpCmd)
 	rootCmd.AddCommand(promoteCmd)
 	rootCmd.AddCommand(linkCmd)
+	rootCmd.AddCommand(activeCmd)
+	rootCmd.AddCommand(switchCmd)
+	rootCmd.AddCommand(hookCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -562,6 +688,16 @@ func resolveHomeDir() string {
 		return dossierHomeFlag
 	}
 	return config.Default().DossierHome
+}
+
+func resolveSessionID() string {
+	if sessionFlag != "" {
+		return sessionFlag
+	}
+	if envSess := os.Getenv("DOSSIER_SESSION"); envSess != "" {
+		return envSess
+	}
+	return "sess_default"
 }
 
 func printJSON(data any) {

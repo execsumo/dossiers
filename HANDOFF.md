@@ -16,7 +16,8 @@ Precedence when docs disagree: `BUILD-DECISIONS.md` > `SPEC.md` (mechanics) > `P
 
 ## Current state
 
-> **Stage: Milestone 5 completed.** Promote and Link flows, the lexical suggestion/ranking engine, and ambiguity resolution are fully implemented. When names or session content overlap with existing dossiers, the service identifies candidates with confidence levels (high, medium, low) to prevent duplicate dossier creation.
+> **Stage: Milestone 6 completed.** Active sessions, hook installation, capability detection, and configuration management for Claude Code (Tier 1) and Codex (Tier 2) are fully implemented. Home directory mocking, backups, and confirmation prompts are all verified under test.
+
 
 Dossier is a local, single-user durable memory layer for agent-driven work across Claude Code, Codex, and Antigravity.
 

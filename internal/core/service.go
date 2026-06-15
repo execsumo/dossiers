@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // Config holds the service-level configurations used by the core logic.
@@ -85,6 +86,17 @@ func (s *Service) Init(ctx context.Context, yesToAll bool) (Result, error) {
 		harnessTiers[h.Name()] = tier
 		if h.Name() == "codex" && !caps.TranscriptCapture {
 			warnings = append(warnings, Warning("Codex transcript archive unavailable. Dossier will say this at session start."))
+		}
+
+		// Install the hook if supported
+		if err == nil && (caps.SessionStartHook || caps.SessionEndHook) {
+			installErr := h.Install(InstallOpts{
+				Interactive: !yesToAll,
+				YesToAll:    yesToAll,
+			})
+			if installErr != nil {
+				warnings = append(warnings, Warning(fmt.Sprintf("Failed to install hooks for %s: %v", h.Name(), installErr)))
+			}
 		}
 	}
 	data["harness_tiers"] = harnessTiers
@@ -695,7 +707,55 @@ type SwitchReq struct {
 }
 
 func (s *Service) Switch(ctx context.Context, req SwitchReq) (Result, error) {
-	return Result{}, NewError(ErrInternal, "unimplemented in Milestone 2")
+	if req.SessionID == "" {
+		return Result{}, NewError(ErrInternal, "session_id is required for switch")
+	}
+
+	oldBinding, err := s.store.GetSessionBinding(req.SessionID)
+	if err == nil && oldBinding != nil && oldBinding.DossierID != "" {
+		oldD, oldRev, err := s.store.Read(oldBinding.DossierID)
+		if err == nil {
+			oldD.Frontmatter.LastTouchedAt = s.clock.Now()
+			_, _ = s.store.Write(oldD, oldRev)
+		}
+		_ = s.store.ClearSessionBinding(req.SessionID)
+	}
+
+	d, rev, err := s.store.Read(req.ID)
+	if err != nil {
+		return Result{}, err
+	}
+
+	harnesses := s.hreg.All()
+	var activeHarness Harness
+	var activeCaps Capabilities
+	for _, h := range harnesses {
+		caps, err := h.Detect()
+		if err == nil && (caps.MCP || caps.SessionStartHook || caps.SessionEndHook || caps.PreCompactionHook || caps.TranscriptCapture) {
+			activeHarness = h
+			activeCaps = caps
+			break
+		}
+	}
+
+	harnessName := "CLI"
+	if activeHarness != nil {
+		harnessName = activeHarness.Name()
+	}
+
+	binding := &SessionBinding{
+		SessionBindingID: req.SessionID,
+		Harness:          harnessName,
+		DossierID:        d.Frontmatter.ID,
+		BoundAt:          s.clock.Now(),
+		LastSeenRevision: string(rev),
+		Capabilities:     activeCaps,
+	}
+	if err := s.store.SaveSessionBinding(binding); err != nil {
+		return Result{}, WrapError(ErrInternal, "failed to save session binding", err)
+	}
+
+	return s.Recall(ctx, RecallReq{ID: d.Frontmatter.ID})
 }
 
 type ActiveReq struct {
@@ -703,7 +763,19 @@ type ActiveReq struct {
 }
 
 func (s *Service) Active(ctx context.Context, req ActiveReq) (Result, error) {
-	return Result{}, NewError(ErrInternal, "unimplemented in Milestone 2")
+	if req.SessionID == "" {
+		return Result{}, NewError(ErrInternal, "session_id is required")
+	}
+
+	binding, err := s.store.GetSessionBinding(req.SessionID)
+	if err != nil {
+		return Result{}, err
+	}
+
+	return Result{
+		OK:   true,
+		Data: binding,
+	}, nil
 }
 
 type ArchiveReq struct {
@@ -788,4 +860,184 @@ func (s *Service) SetStatus(ctx context.Context, req SetStatusReq) (Result, erro
 		OK:   true,
 		Data: newRev,
 	}, nil
+}
+
+// SessionStart returns the injected context payload for a harness session.
+func (s *Service) SessionStart(ctx context.Context, sessionID string) (string, error) {
+	binding, err := s.store.GetSessionBinding(sessionID)
+	var activeDossierID string
+	if err == nil && binding != nil {
+		activeDossierID = binding.DossierID
+	}
+
+	// Fetch open dossiers
+	fms, err := s.store.List("all")
+	if err != nil {
+		return "", err
+	}
+
+	now := s.clock.Now()
+	type scoredMeta struct {
+		fm    Frontmatter
+		score int
+	}
+	var scored []scoredMeta
+	for _, fm := range fms {
+		if fm.Status != StatusArchived {
+			score := CalculatePriorityScore(fm, now)
+			scored = append(scored, scoredMeta{fm: fm, score: score})
+		}
+	}
+	sort.Slice(scored, func(i, j int) bool {
+		if scored[i].score != scored[j].score {
+			return scored[i].score > scored[j].score
+		}
+		if !scored[i].fm.LastTouchedAt.Equal(scored[j].fm.LastTouchedAt) {
+			return scored[i].fm.LastTouchedAt.Before(scored[j].fm.LastTouchedAt)
+		}
+		return scored[i].fm.UpdatedAt.Before(scored[j].fm.UpdatedAt)
+	})
+
+	var openLines []string
+	for _, sItem := range scored {
+		openLines = append(openLines, fmt.Sprintf("- **%s** (status: %s, slug: %s, priority: %d)", sItem.fm.Name, sItem.fm.Status, sItem.fm.Slug, sItem.score))
+	}
+	openStr := strings.Join(openLines, "\n")
+	if openStr == "" {
+		openStr = "(No open dossiers)"
+	}
+
+	// Detect capabilities
+	harnesses := s.hreg.All()
+	var activeHarness Harness
+	var activeCaps Capabilities
+	for _, h := range harnesses {
+		caps, err := h.Detect()
+		if err == nil && (caps.MCP || caps.SessionStartHook || caps.SessionEndHook || caps.PreCompactionHook || caps.TranscriptCapture) {
+			activeHarness = h
+			activeCaps = caps
+			break
+		}
+	}
+
+	harnessName := "CLI"
+	if activeHarness != nil {
+		harnessName = activeHarness.Name()
+		switch harnessName {
+		case "claude-code":
+			harnessName = "Claude Code"
+		case "codex":
+			harnessName = "Codex"
+		case "antigravity":
+			harnessName = "Antigravity"
+		}
+	}
+
+	mcpAvail := "unavailable"
+	startAvail := "unavailable"
+	endAvail := "unavailable"
+	compactionAvail := "unavailable"
+	transcriptAvail := "unavailable"
+
+	if activeCaps.MCP {
+		mcpAvail = "available"
+	}
+	if activeCaps.SessionStartHook {
+		startAvail = "available"
+	}
+	if activeCaps.SessionEndHook {
+		endAvail = "available"
+	}
+	if activeCaps.PreCompactionHook {
+		compactionAvail = "available"
+	}
+	if activeCaps.TranscriptCapture {
+		transcriptAvail = "available"
+	}
+
+	var sb strings.Builder
+	sb.WriteString("# Dossier Library\n\n")
+	sb.WriteString(fmt.Sprintf("Harness: %s\n", harnessName))
+	sb.WriteString("Capabilities:\n")
+	sb.WriteString(fmt.Sprintf("- MCP: %s\n", mcpAvail))
+	sb.WriteString(fmt.Sprintf("- Session-start hook: %s\n", startAvail))
+	sb.WriteString(fmt.Sprintf("- Session-end save hook: %s\n", endAvail))
+	sb.WriteString(fmt.Sprintf("- Pre-compaction save hook: %s\n", compactionAvail))
+	sb.WriteString(fmt.Sprintf("- Transcript capture: %s\n\n", transcriptAvail))
+
+	if harnessName == "Codex" && !activeCaps.TranscriptCapture {
+		sb.WriteString("Warning: Transcript archive is unavailable in this session.\n\n")
+	}
+
+	sb.WriteString("Open Dossiers:\n")
+	sb.WriteString(openStr)
+	sb.WriteString("\n\n")
+
+	sb.WriteString("Distillation Guide:\n")
+	sb.WriteString("See: ~/.dossier/context/guide.md\n\n")
+
+	if activeDossierID != "" {
+		recallRes, err := s.Recall(ctx, RecallReq{ID: activeDossierID})
+		if err == nil {
+			recData := recallRes.Data.(RecallResult)
+			sb.WriteString("Active Dossier:\n")
+			sb.WriteString(fmt.Sprintf("ID: %s\n", recData.Frontmatter.ID))
+			sb.WriteString(fmt.Sprintf("Name: %s\n", recData.Frontmatter.Name))
+			sb.WriteString(fmt.Sprintf("Revision: %s\n\n", recData.Revision))
+			sb.WriteString("Distilled State:\n")
+			sb.WriteString(recData.DistilledState)
+			sb.WriteString("\n")
+		}
+	} else {
+		sb.WriteString("No active dossier bound to this session. Please select an existing dossier to continue or create a new one.\n")
+	}
+
+	return sb.String(), nil
+}
+
+// SessionEnd saves state and appends the transcript artifact on session completion.
+func (s *Service) SessionEnd(ctx context.Context, sessionID string, distilledState string, transcript string) error {
+	binding, err := s.store.GetSessionBinding(sessionID)
+	if err != nil {
+		return nil
+	}
+
+	now := s.clock.Now()
+
+	if distilledState != "" {
+		_, err = s.Save(ctx, SaveReq{
+			ID:                     binding.DossierID,
+			BaseRevision:           Revision(binding.LastSeenRevision),
+			DistilledStateMarkdown: distilledState,
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	if transcript != "" {
+		art := Artifact{
+			ID:            "art_transcript",
+			DossierID:     binding.DossierID,
+			Type:          ArtifactTypeTranscript,
+			Title:         "Session End Transcript",
+			ContentFormat: ContentFormatText,
+			Content:       transcript,
+			CapturedAt:    now,
+			RefreshedAt:   now,
+		}
+		if err := s.store.WriteArtifact(binding.DossierID, &art); err != nil {
+			return err
+		}
+		_ = s.store.AppendAudit(binding.DossierID, AuditEvent{
+			TS:             now,
+			Event:          AuditEventSave,
+			DossierID:      binding.DossierID,
+			BeforeRevision: binding.LastSeenRevision,
+			AfterRevision:  binding.LastSeenRevision,
+			ArtifactsAdded: []string{art.ID},
+		})
+	}
+
+	return nil
 }

@@ -2,8 +2,12 @@ package harness
 
 import (
 	"dossier/internal/core"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 )
 
 // CodexHarness implements capability detection and installation for Codex.
@@ -52,8 +56,98 @@ func (c *CodexHarness) Detect() (core.Capabilities, error) {
 	}, nil
 }
 
-// Install stub for Milestone 6 hook configuration.
+// Install configures lifecycle hooks in hooks.json.
 func (c *CodexHarness) Install(opts core.InstallOpts) error {
-	// To be implemented in Milestone 6
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	configPath := filepath.Join(home, ".codex", "config.toml")
+	hooksPath := filepath.Join(home, ".codex", "hooks.json")
+
+	_, err1 := os.Stat(configPath)
+	_, err2 := os.Stat(hooksPath)
+
+	if os.IsNotExist(err1) && os.IsNotExist(err2) {
+		return nil // Codex not detected, skip
+	}
+
+	// Ensure .codex directory exists
+	if err := os.MkdirAll(filepath.Dir(hooksPath), 0755); err != nil {
+		return fmt.Errorf("failed to create .codex directory: %w", err)
+	}
+
+	var data []byte
+	if _, err := os.Stat(hooksPath); err == nil {
+		data, err = os.ReadFile(hooksPath)
+		if err != nil {
+			return fmt.Errorf("failed to read Codex hooks: %w", err)
+		}
+	}
+
+	var configMap map[string]any
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &configMap); err != nil {
+			configMap = make(map[string]any)
+		}
+	} else {
+		configMap = make(map[string]any)
+	}
+
+	executable, err := os.Executable()
+	if err != nil {
+		executable = "dossier"
+	}
+	execCmd := fmt.Sprintf("%s hook", executable)
+
+	hooksVal, ok := configMap["hooks"]
+	var hooksMap map[string]any
+	if ok {
+		hooksMap, _ = hooksVal.(map[string]any)
+	}
+	if hooksMap == nil {
+		hooksMap = make(map[string]any)
+	}
+
+	startHook, _ := hooksMap["SessionStart"].(string)
+	stopHook, _ := hooksMap["Stop"].(string)
+
+	if strings.Contains(startHook, "hook session-start") &&
+		strings.Contains(stopHook, "hook session-end") {
+		return nil // Already installed
+	}
+
+	if !opts.YesToAll {
+		fmt.Printf("Configure Codex session hooks? [y/N]: ")
+		var response string
+		_, _ = fmt.Scanln(&response)
+		response = strings.ToLower(strings.TrimSpace(response))
+		if response != "y" && response != "yes" {
+			return nil
+		}
+	}
+
+	// Backup existing hooksPath if it exists and has content
+	if len(data) > 0 {
+		backupPath := fmt.Sprintf("%s.%d.bak", hooksPath, time.Now().Unix())
+		if err := os.WriteFile(backupPath, data, 0644); err != nil {
+			return fmt.Errorf("failed to create config backup: %w", err)
+		}
+	}
+
+	hooksMap["SessionStart"] = execCmd + " session-start"
+	hooksMap["Stop"] = execCmd + " session-end"
+	configMap["hooks"] = hooksMap
+
+	newData, err := json.MarshalIndent(configMap, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(hooksPath, newData, 0644); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+
 	return nil
 }
