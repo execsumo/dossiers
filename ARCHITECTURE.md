@@ -1,0 +1,306 @@
+# Dossier — Architecture (seeded)
+
+> Date: 2026-06-14 · Language: Go (see `BUILD-DECISIONS.md` B1)
+> Status: **seed**. This establishes the structure and the load-bearing decisions so the codebase starts correct. The dev agent owns keeping it current as it builds — update it in the same PR as any structural change.
+
+This document describes **how** to build what `SPEC.md` specifies. The SPEC defines the seams (data model, tool/CLI contracts, file layout, acceptance criteria); this defines the internal shape behind those seams.
+
+---
+
+## 1. Guiding principle: one core, many adapters
+
+Dossier is a single binary that wears three faces — CLI, MCP-over-stdio server, and harness hook handler — plus a TUI. The cardinal rule:
+
+> **All four entry points are thin adapters over one pure domain core. None of them contains business logic.**
+
+This is ports-and-adapters (hexagonal). It buys us the property the SPEC implicitly requires but never states: **CLI, MCP, and TUI must behave identically** (acceptance criteria are written once but must hold across surfaces). They behave identically because they call the same `core.Service` and render the same `Result` values.
+
+```
+                 driving adapters (call into core)
+        ┌──────────┬──────────┬──────────┬──────────┐
+        │   CLI    │   MCP    │  Hooks   │   TUI    │
+        │ (cobra)  │ (stdio)  │ handler  │(bubbletea)│
+        └────┬─────┴────┬─────┴────┬─────┴────┬─────┘
+             └──────────┴──────────┴──────────┘
+                            │ calls
+                   ┌────────▼─────────┐
+                   │   core.Service   │   use-cases: Promote, Save,
+                   │  (orchestration) │   Link, Merge, Recall, Switch,
+                   └────────┬─────────┘   List, SetStatus, Archive, ...
+                            │ depends on PORTS (interfaces)
+        ┌──────────┬────────┼─────────┬──────────┬──────────┐
+        │  Store   │ Searcher │ Tokenizer │ Harness │  Clock  │
+        └────┬─────┴────┬───┴─────┬────┴────┬─────┴────┬────┘
+             │          │         │         │          │
+        driven adapters (implement ports)
+        fsstore     rg/native   bpe       claudecode/   wall
+                                          codex/antigravity
+```
+
+Core depends on **nothing** outside the standard library and its own port interfaces. Everything else depends on core. This makes the domain testable in isolation and lets us swap search backends, tokenizers, and harnesses without touching logic.
+
+---
+
+## 2. Package layout (Go)
+
+```
+dossier/
+  go.mod
+  cmd/dossier/
+    main.go              # entrypoint: routes to `cli` (default) or `mcp serve`
+  internal/
+    core/                # PURE DOMAIN — no I/O, no third-party deps
+      dossier.go         # Dossier, Frontmatter, DistilledState, section model + invariants
+      artifact.go        # Artifact, types, size/format validation
+      audit.go           # AuditEvent types (§4.4) + JSONL marshaling
+      revision.go        # canonical hashing + optimistic-concurrency check (see §6)
+      priority.go        # priority scoring (SPEC §11.1)
+      suggest.go         # lexical suggestion ranking (SPEC §11.2)
+      result.go          # Result/Warning/NextAction value types (the §8.2 envelope, surface-agnostic)
+      errors.go          # typed domain errors ↔ the §8.2 error codes
+      ports.go           # Store, Searcher, Tokenizer, HarnessRegistry, Clock interfaces
+      service.go         # Service: orchestrates use-cases over the ports
+    store/               # driven adapter: filesystem (implements core.Store)
+      fsstore.go         # layout, read/write, atomic write protocol (§5)
+      auditlog.go        # append-only JSONL with O_APPEND + lock
+      lock.go            # per-dossier advisory file lock
+      ids.go             # ULID generation; slug generation + collision suffix
+    search/              # driven adapter (implements core.Searcher)
+      native.go          # pure-Go recursive scan (default)
+      ripgrep.go         # rg fast-path when detected
+    tokenizer/           # driven adapter (implements core.Tokenizer)
+      bpe.go             # embedded vocab; estimate()
+    harness/             # driven adapters (implement core.HarnessRegistry / Harness)
+      harness.go         # Harness interface, Capabilities, Tier
+      claudecode.go      # FIRST target (B2)
+      codex.go
+      antigravity.go
+    config/              # config.yaml load/save/defaults
+    hooks/               # hook PAYLOAD builders + session-start/end handlers (call core)
+    cli/                 # cobra commands → core.Service → render (text/--json)
+    mcp/                 # stdio MCP server → core.Service → §8.2 envelope
+    tui/                 # bubbletea models/views → core.Service
+  assets/                # go:embed — Distillation Guide + context templates
+    guide.md
+    library.tmpl.md
+  docs/
+    harness-capabilities.md   # PRODUCED by dev agent (Milestone 1)
+```
+
+Notes:
+- `internal/` so nothing is importable as a library — this is an application, not a SDK.
+- The dependency rule is enforced by direction: `core` imports none of its sibling packages. A lint check (or a simple `go list` assertion in CI) should guard this.
+
+---
+
+## 3. The Service facade
+
+`core.Service` is the only thing adapters talk to. One method per use-case, each taking a typed request and returning `(core.Result, error)` where `error` is always one of the typed domain errors in `errors.go`.
+
+```go
+type Service struct {
+    store  Store
+    search Searcher
+    tok    Tokenizer
+    hreg   HarnessRegistry
+    clock  Clock
+    cfg    Config
+}
+
+func (s *Service) Promote(ctx, PromoteReq) (Result, error)
+func (s *Service) Save(ctx, SaveReq) (Result, error)        // optimistic concurrency, §6
+func (s *Service) Link(ctx, LinkReq) (Result, error)        // candidates if id omitted
+func (s *Service) Merge(ctx, MergeReq) (Result, error)      // conflict detection
+func (s *Service) Recall(ctx, RecallReq) (Result, error)    // returns revision + token estimate
+func (s *Service) List(ctx, ListReq) (Result, error)
+func (s *Service) Search(ctx, SearchReq) (Result, error)
+func (s *Service) Switch(ctx, SwitchReq) (Result, error)
+func (s *Service) Active(ctx, ActiveReq) (Result, error)
+func (s *Service) SetStatus / SetNextAction / SetOpenQuestions / SetPriority(...)
+func (s *Service) Archive(ctx, ArchiveReq) (Result, error)
+func (s *Service) Path(ctx, PathReq) (Result, error)
+func (s *Service) Doctor(ctx) (Result, error)
+func (s *Service) Init(ctx, InitReq) (Result, error)
+```
+
+`Result` carries `data any`, `warnings []Warning`, `next_actions []NextAction` — the exact §8.2 envelope, but surface-agnostic. The MCP adapter serializes it as JSON; the CLI adapter prints text or `--json`; the TUI renders it. **Warnings (e.g. over-token-target, transcript-unavailable) are produced once in core** and flow to every surface — never re-implemented per adapter.
+
+---
+
+## 4. Ports (the seams)
+
+```go
+type Store interface {
+    // CRUD over dossiers, artifacts, audit, sessions, conflicts, config.
+    // Returns current revision on reads; enforces atomic writes (§5).
+    Read(slugOrID string) (*Dossier, Revision, error)
+    List(filter StatusFilter) ([]DossierMeta, error)   // frontmatter scan only
+    Write(d *Dossier, base Revision) (Revision, error) // optimistic; see §6
+    WriteArtifact(dossierID string, a *Artifact) error
+    AppendAudit(dossierID string, e AuditEvent) error
+    // ... session bindings, conflicts, init/layout
+}
+
+type Searcher interface {
+    Search(query string, scope SearchScope) ([]Hit, error)
+}
+
+type Tokenizer interface {
+    Estimate(text string) int
+}
+
+type Harness interface {
+    Name() string
+    Detect() (Capabilities, error)   // reads harness config, returns booleans + tier
+    Install(InstallOpts) error        // idempotent, non-clobbering, backs up (B7/B8)
+}
+type HarnessRegistry interface{ All() []Harness }
+
+type Clock interface{ Now() time.Time }
+```
+
+Why each is a port:
+- **Store** — the whole "no database, files are truth" decision lives behind one interface; tests use a temp dir, and an in-memory fake makes core tests fast.
+- **Searcher** — lets native/ripgrep swap per B5 without core knowing.
+- **Tokenizer** — B4; swappable, mockable (tests assert behavior, not exact counts).
+- **Harness** — isolates the **riskiest, most fragile code** (mutating other tools' config files) behind one interface, and makes the capability matrix a set of table tests against fixture config dirs.
+
+---
+
+## 5. File operations & atomic writes
+
+Implements SPEC §12. The non-negotiables:
+
+**`dossier.md` write protocol** (in `fsstore.go`):
+1. Acquire the per-dossier advisory lock (`<dossier>/.lock`, `flock`).
+2. Read current content → compute current `Revision`.
+3. Optimistic-concurrency check against the caller's `base_revision` (§6).
+4. Write to a temp file **in the same directory** (so rename is atomic on the same filesystem).
+5. `fsync` the temp file.
+6. `rename` temp over `dossier.md` (atomic replace).
+7. Append the audit event.
+8. Release lock.
+
+**Artifacts**: generate id first → write file atomically (temp+rename) → append audit. Reject any single artifact > 1 GB (`artifact_too_large`). Validate format ∈ {markdown, json, txt}; binary → `binary_artifact_unsupported`, store metadata/path/provenance only.
+
+**`audit.log`**: `O_APPEND` single-line JSONL writes (atomic for lines < `PIPE_BUF` on POSIX), under a short-held dir lock. Read = parse line-by-line, order by `ts`.
+
+**IDs / slugs** (`ids.go`): ULID with prefixes `dos_ art_ sess_ rev_ conf_`. Slug per SPEC §12.2; on collision append `-` + last 6 chars of the ULID (Crockford base32).
+
+---
+
+## 6. Concurrency & revisions (resolves the spec ambiguity)
+
+> See `BUILD-DECISIONS.md` items 1–3, 6. **`base_revision` is NOT stored in frontmatter** — it's a session-side token returned by reads and passed back on writes.
+
+**Revision** = `rev_` + SHA-256 (hex, truncated to 32 chars) over the canonical form:
+
+```
+canonical(frontmatter)         # keys sorted; scalars normalized; lists in declared order
++ "\n---\n"
++ normalize_newlines(body)     # CRLF→LF, trailing-whitespace trimmed per line, single trailing \n
++ "\n---artifacts---\n"
++ join(sorted("<art_id>:<sha256(content)>"), "\n")
+```
+
+Canonicalization must be **deterministic** — same logical content always yields the same revision regardless of YAML key order or line endings. Put `canonicalize()` and `Revision()` in `revision.go` with exhaustive table tests; they are load-bearing.
+
+**Optimistic concurrency on `Save`** (SPEC §11.5):
+1. Read current revision.
+2. If `current == base_revision` → write (atomic protocol §5).
+3. If different:
+   - If **only non-overlapping frontmatter** changed (e.g. one session set `next_action`, another set `status`) → auto-merge, audit, succeed.
+   - Otherwise → write the rejected proposal to `conflicts/<conf_id>.md`, audit `conflict_created`, return `concurrent_edit`. **Never** last-write-wins for Distilled State body.
+
+The read use-cases (`Recall`, `Switch`, `Active`) return the revision so the agent can round-trip it.
+
+**Conflict artifact format** (`conflicts/<conf_id>.md`):
+```yaml
+---
+id: conf_...
+dossier_id: dos_...
+kind: distilled_state_concurrent_edit   # or merge_conflict
+base_revision: rev_...
+attempted_revision: rev_...
+session: sess_...
+ts: 2026-06-14T16:10:00-07:00
+---
+## Rejected proposal
+<the body the caller tried to write>
+
+## Diff against current
+<unified diff>
+```
+`doctor` reports any `conflicts/*.md` whose status isn't resolved.
+
+---
+
+## 7. Entry-point wiring
+
+`cmd/dossier/main.go`:
+- `dossier mcp serve` → builds the Service, runs the MCP stdio server (`internal/mcp`).
+- `dossier hook <session-start|session-end|pre-compaction>` → `internal/hooks` handler (reused by harness hook configs; same binary, same Service).
+- everything else → cobra CLI (`internal/cli`); `--tui` or the bare `dossier` with no subcommand can launch the TUI.
+
+All three construct the Service identically via a small `wire()` that picks adapters (native vs ripgrep search, real vs fake store) — keep composition in one place.
+
+**MCP**: use the official Go MCP SDK over stdio. Each `dossier_*` tool (SPEC §8.1) is a ~10-line handler: parse input → call one Service method → marshal `Result` into the §8.2 envelope. Map typed errors → §8.2 codes in **one** place (`mcp/errors.go`).
+
+**Hooks** (SPEC §9): `session-start` builds the library payload (frontmatter scan + capability warnings + guide pointer + active Dossier's distilled state if bound). `session-end`/`pre-compaction` force a `Save` of the active binding. Hook handlers call core; they don't reimplement save.
+
+---
+
+## 8. Harness adapters (the fragile edge)
+
+Each harness implements `Detect()` and `Install()`. `Install` is **idempotent, non-clobbering, and backs up** every file it touches (B7), and is **gated by per-harness confirmation** in `init` (B8). Capability detection produces the booleans in SPEC §5.1 and a Tier (§5.5/§6.1).
+
+Build **Claude Code first** (B2) to a real Tier-1 implementation; codify what you learn in `docs/harness-capabilities.md`; then implement Codex and Antigravity against the same interface, letting them land on Tier 2/3 honestly. The product must **degrade visibly** — a missing capability is a warning surfaced through `Result`, never a silent no-op.
+
+---
+
+## 9. Assets & generated context
+
+The Distillation Guide and the `library.md` template are **embedded** via `go:embed` (`assets/`). `init` writes the guide to `~/.dossier/context/guide.md`; `context refresh` regenerates `~/.dossier/context/library.md` from the template + a live frontmatter scan. This keeps the single-binary promise — no external asset files to ship.
+
+---
+
+## 10. Testing strategy (how the acceptance criteria get met)
+
+- **core**: pure → table-driven unit tests. `revision.go`, `priority.go`, `suggest.go`, concurrency branches, frontmatter validation. Use a fake `Store`/`Clock`/`Tokenizer`.
+- **store**: integration tests against a temp `DOSSIER_HOME`. Assert atomic-write durability, the 500-Dossier frontmatter scan < 2s (SPEC §14.1), append-only audit, slug collisions.
+- **Distillation Guide**: golden-file fixtures — sample transcript in, assert the distilled output's *structure and provenance presence* (not verbatim prose). This is how guide quality stays regression-safe.
+- **MCP**: drive the server over in-memory pipes; assert the §8.2 envelope and error-code mapping for each tool.
+- **harness**: fixture config dirs per harness; assert `Detect()` tiers and that `Install()` is idempotent and backs up.
+- **doctor**: corrupt-store fixtures (bad YAML, dangling provenance, unparseable audit, stale context) → assert each is reported.
+
+---
+
+## 11. What NOT to build (architectural guardrails)
+
+These mirror the HANDOFF watchouts and are structural, not stylistic:
+
+- **No database, no derived index** in v1. Files are truth. If listing/search ever needs an index, it's a pure derived cache added later — not now.
+- **No persistent cross-Dossier graph/links.** Relatedness is resolved by merge into one Distilled State.
+- **No global active Dossier.** Binding is per session (`sessions/<id>.json`).
+- **No native delete** command on CLI or MCP. Archive only.
+- **No last-write-wins for Distilled State.** Conflicts are artifacts, surfaced.
+- **No silent truncation** to hit the token target. Warn, never cut.
+- **No silent linking/merging** of ambiguous targets. Ask.
+- **Core stays pure.** If you're tempted to import `os`/a harness/the filesystem into `internal/core`, you've put logic in the wrong layer — move it behind a port.
+
+---
+
+## 12. Build order (maps to SPEC §15 milestones)
+
+The SPEC milestones are the plan; this is the architectural sequencing that makes them land cleanly:
+
+1. **M1** — `core` types + `ports.go` + fake Store; `fsstore` skeleton; `config`; `init`/`doctor` baseline; **`docs/harness-capabilities.md` for Claude Code** (B2). Establish the dependency-direction CI guard now.
+2. **M2** — full `fsstore` (atomic writes, audit, ids/slugs); core create/read/update; `list`/`show`/`path`/`archive`.
+3. **M3** — `recall` (+ revision + token estimate), `tokenizer`, over-target warning, `search` (native first, rg fast-path), generated `library.md`.
+4. **M4** — MCP stdio server + all `dossier_*` tools over the existing Service.
+5. **M5** — `promote`, `suggest`, `link` + ambiguity, transcript-unavailable warnings.
+6. **M6** — session binding, `switch`/`active`, Claude Code hooks (session-start/end, pre-compaction), TUI dashboard.
+7. **M7** — optimistic concurrency + conflict artifacts + `merge` with conflict reporting.
+8. **M8** — ship Distillation Guide with examples; dogfood across all three harnesses; tune.
+
+Revisions and the Store contract are foundational — get §5 and §6 right early; everything writes through them.
