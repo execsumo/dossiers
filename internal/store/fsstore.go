@@ -134,6 +134,52 @@ func (s *FSStore) Read(slugOrID string) (*core.Dossier, core.Revision, error) {
 	}, rev, nil
 }
 
+// ReadRevision retrieves a specific historical version of a Dossier by revision hash.
+func (s *FSStore) ReadRevision(slugOrID string, rev core.Revision) (*core.Dossier, error) {
+	dossierDir, err := s.findDossierDir(slugOrID)
+	if err != nil {
+		return nil, err
+	}
+
+	// First check if current dossier matches this revision
+	dossierPath := filepath.Join(dossierDir, "dossier.md")
+	if _, err := os.Stat(dossierPath); err == nil {
+		data, err := os.ReadFile(dossierPath)
+		if err == nil {
+			currFM, currBody, err := ParseDossierFile(string(data))
+			if err == nil {
+				currentArtifacts, _ := s.listArtifactsInternal(currFM.ID, dossierDir)
+				currRev := core.CalculateRevision(*currFM, currBody, currentArtifacts)
+				if currRev == rev {
+					return &core.Dossier{
+						Frontmatter:    *currFM,
+						DistilledState: core.DistilledState{Body: currBody},
+					}, nil
+				}
+			}
+		}
+	}
+
+	// Check history folder
+	historyPath := filepath.Join(dossierDir, "history", fmt.Sprintf("%s.md", rev))
+	if _, err := os.Stat(historyPath); err == nil {
+		data, err := os.ReadFile(historyPath)
+		if err != nil {
+			return nil, err
+		}
+		currFM, currBody, err := ParseDossierFile(string(data))
+		if err != nil {
+			return nil, err
+		}
+		return &core.Dossier{
+			Frontmatter:    *currFM,
+			DistilledState: core.DistilledState{Body: currBody},
+		}, nil
+	}
+
+	return nil, core.NewError(core.ErrNotFound, fmt.Sprintf("revision %s not found", rev))
+}
+
 // Write writes a Dossier atomically checking concurrency.
 func (s *FSStore) Write(d *core.Dossier, base core.Revision) (core.Revision, error) {
 	slug := d.Frontmatter.Slug
@@ -179,6 +225,9 @@ func (s *FSStore) Write(d *core.Dossier, base core.Revision) (core.Revision, err
 	if err := os.MkdirAll(filepath.Join(dossierDir, "conflicts"), 0755); err != nil {
 		return "", err
 	}
+	if err := os.MkdirAll(filepath.Join(dossierDir, "history"), 0755); err != nil {
+		return "", err
+	}
 
 	// Acquire Lock
 	lock, err := Lock(filepath.Join(dossierDir, ".lock"))
@@ -207,6 +256,11 @@ func (s *FSStore) Write(d *core.Dossier, base core.Revision) (core.Revision, err
 		if base != "" && currentRevision != base {
 			return "", core.NewError(core.ErrConcurrentEdit, fmt.Sprintf("concurrency mismatch: base is %q but current is %q", base, currentRevision))
 		}
+
+		// Save current state to history/<revision>.md before overwriting
+		historyDir := filepath.Join(dossierDir, "history")
+		historyPath := filepath.Join(historyDir, fmt.Sprintf("%s.md", currentRevision))
+		_ = os.WriteFile(historyPath, data, 0644)
 	}
 
 	// Update dates

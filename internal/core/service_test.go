@@ -39,6 +39,7 @@ type localFakeStore struct {
 	dossiers  map[string]*Dossier
 	revisions map[string]Revision
 	audits    map[string][]AuditEvent
+	history   map[Revision]*Dossier
 }
 
 func newLocalFakeStore() *localFakeStore {
@@ -46,6 +47,7 @@ func newLocalFakeStore() *localFakeStore {
 		dossiers:  make(map[string]*Dossier),
 		revisions: make(map[string]Revision),
 		audits:    make(map[string][]AuditEvent),
+		history:   make(map[Revision]*Dossier),
 	}
 }
 
@@ -55,7 +57,21 @@ func (f *localFakeStore) Read(id string) (*Dossier, Revision, error) {
 	if !ok {
 		return nil, "", NewError(ErrNotFound, "not found")
 	}
-	return d, f.revisions[id], nil
+	cp := *d
+	return &cp, f.revisions[id], nil
+}
+func (f *localFakeStore) ReadRevision(id string, rev Revision) (*Dossier, error) {
+	d, ok := f.history[rev]
+	if !ok {
+		currRev := f.revisions[id]
+		if currRev == rev {
+			cp := *f.dossiers[id]
+			return &cp, nil
+		}
+		return nil, NewError(ErrNotFound, "revision not found")
+	}
+	cp := *d
+	return &cp, nil
 }
 func (f *localFakeStore) List(filter string) ([]Frontmatter, error) {
 	var list []Frontmatter
@@ -71,8 +87,24 @@ func (f *localFakeStore) Write(d *Dossier, base Revision) (Revision, error) {
 	if d.Frontmatter.Slug == "" {
 		d.Frontmatter.Slug = "fake-slug"
 	}
+
+	// Check concurrency
+	if base != "" {
+		if currRev, ok := f.revisions[d.Frontmatter.ID]; ok && currRev != base {
+			return "", NewError(ErrConcurrentEdit, "concurrency mismatch")
+		}
+	}
+
+	// Save existing to history before overwriting
+	if currentRev, ok := f.revisions[d.Frontmatter.ID]; ok {
+		if existing, ok := f.dossiers[d.Frontmatter.ID]; ok {
+			cp := *existing
+			f.history[currentRev] = &cp
+		}
+	}
+
 	f.dossiers[d.Frontmatter.ID] = d
-	rev := Revision("rev_fake_new")
+	rev := CalculateRevision(d.Frontmatter, d.DistilledState.Body, nil)
 	f.revisions[d.Frontmatter.ID] = rev
 	return rev, nil
 }

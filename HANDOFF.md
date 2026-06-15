@@ -16,7 +16,8 @@ Precedence when docs disagree: `BUILD-DECISIONS.md` > `SPEC.md` (mechanics) > `P
 
 ## Current state
 
-> **Stage: Milestone 6 completed.** Active sessions, hook installation, capability detection, and configuration management for Claude Code (Tier 1) and Codex (Tier 2) are fully implemented. Home directory mocking, backups, and confirmation prompts are all verified under test.
+> **Stage: Milestone 7 completed.** Optimistic concurrency control, non-overlapping frontmatter auto-merging, concurrent edit body conflict handling (with LCS unified diff conflict artifact creation), and full `dossier merge` logic (with conflict detection and resolved conflict bypass) are fully implemented. CLI subcommands (`status`, `next`, `priority`, `questions`, and `merge`) are fully wired and verified under integration test.
+
 
 
 Dossier is a local, single-user durable memory layer for agent-driven work across Claude Code, Codex, and Antigravity.

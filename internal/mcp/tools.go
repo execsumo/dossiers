@@ -377,16 +377,18 @@ func (s *Server) handleToolCall(ctx context.Context, id any, name string, args j
 
 	case "dossier_merge":
 		var params struct {
-			SourceID string `json:"source_id"`
-			TargetID string `json:"target_id"`
+			SourceID          string   `json:"source_id"`
+			TargetID          string   `json:"target_id"`
+			ResolvedConflicts []string `json:"resolved_conflicts"`
 		}
 		if err := json.Unmarshal(args, &params); err != nil {
 			s.sendError(id, -32602, "Invalid params", nil)
 			return
 		}
 		res, err = s.svc.Merge(ctx, core.MergeReq{
-			SourceID: params.SourceID,
-			TargetID: params.TargetID,
+			SourceID:          params.SourceID,
+			TargetID:          params.TargetID,
+			ResolvedConflicts: params.ResolvedConflicts,
 		})
 
 	case "dossier_active":

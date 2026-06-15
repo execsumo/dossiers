@@ -13,6 +13,7 @@ type FakeStore struct {
 	Audits    map[string][]core.AuditEvent
 	Sessions  map[string]*core.SessionBinding
 	Conflicts map[string]*core.Conflict
+	History   map[core.Revision]*core.Dossier
 }
 
 // NewFakeStore instantiates an in-memory FakeStore.
@@ -24,6 +25,7 @@ func NewFakeStore() *FakeStore {
 		Audits:    make(map[string][]core.AuditEvent),
 		Sessions:  make(map[string]*core.SessionBinding),
 		Conflicts: make(map[string]*core.Conflict),
+		History:   make(map[core.Revision]*core.Dossier),
 	}
 }
 
@@ -37,12 +39,31 @@ func (f *FakeStore) Read(slugOrID string) (*core.Dossier, core.Revision, error) 
 		// Try by ID or Slug check
 		for _, dos := range f.Dossiers {
 			if dos.Frontmatter.ID == slugOrID || dos.Frontmatter.Slug == slugOrID {
-				return dos, f.Revisions[dos.Frontmatter.ID], nil
+				cp := *dos
+				return &cp, f.Revisions[dos.Frontmatter.ID], nil
 			}
 		}
 		return nil, "", core.NewError(core.ErrNotFound, fmt.Sprintf("dossier %q not found in fake store", slugOrID))
 	}
-	return d, f.Revisions[d.Frontmatter.ID], nil
+	cp := *d
+	return &cp, f.Revisions[d.Frontmatter.ID], nil
+}
+
+func (f *FakeStore) ReadRevision(slugOrID string, rev core.Revision) (*core.Dossier, error) {
+	if d, ok := f.History[rev]; ok {
+		cp := *d
+		return &cp, nil
+	}
+	for _, d := range f.Dossiers {
+		if d.Frontmatter.ID == slugOrID || d.Frontmatter.Slug == slugOrID {
+			currRev := f.Revisions[d.Frontmatter.ID]
+			if currRev == rev {
+				cp := *d
+				return &cp, nil
+			}
+		}
+	}
+	return nil, core.NewError(core.ErrNotFound, fmt.Sprintf("revision %s not found in fake store", rev))
 }
 
 func (f *FakeStore) List(statusFilter string) ([]core.Frontmatter, error) {
@@ -62,8 +83,16 @@ func (f *FakeStore) Write(d *core.Dossier, base core.Revision) (core.Revision, e
 		return "", core.NewError(core.ErrConcurrentEdit, "concurrent edit detected")
 	}
 
+	// Save to history before overwriting
+	if currentRev != "" {
+		if existing, ok := f.Dossiers[id]; ok {
+			cp := *existing
+			f.History[currentRev] = &cp
+		}
+	}
+
 	f.Dossiers[id] = d
-	newRev := core.Revision(fmt.Sprintf("rev_fake_%d", len(f.Revisions)+1))
+	newRev := core.Revision(fmt.Sprintf("rev_fake_%d", len(f.History)+1))
 	f.Revisions[id] = newRev
 	return newRev, nil
 }

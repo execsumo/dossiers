@@ -12,6 +12,7 @@ type Revision string
 type Store interface {
 	Init() error
 	Read(slugOrID string) (*Dossier, Revision, error)
+	ReadRevision(slugOrID string, rev Revision) (*Dossier, error)
 	List(statusFilter string) ([]Frontmatter, error)
 	Write(d *Dossier, base Revision) (Revision, error)
 	WriteArtifact(dossierID string, a *Artifact) error

@@ -31,8 +31,8 @@ var (
 	sessionFlag       string
 )
 
-// Execute runs the cobra command parser.
-func Execute() {
+// NewRootCmd constructs the root cobra command hierarchy.
+func NewRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "dossier",
 		Short: "Dossier: durable memory layer for agent-driven work",
@@ -609,6 +609,207 @@ func Execute() {
 	switchCmd.Flags().StringVar(&sessionFlag, "session", "", "Session ID to bind")
 	switchCmd.Flags().BoolVar(&jsonFlag, "json", false, "Output results in JSON format")
 
+	mergeCmd := &cobra.Command{
+		Use:   "merge <source> <target>",
+		Short: "Merge a source dossier into a surviving target dossier",
+		Args:  cobra.ExactArgs(2),
+		Run: func(cmd *cobra.Command, args []string) {
+			homeDir := resolveHomeDir()
+			svc, err := wire(homeDir)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+
+			res, err := svc.Merge(context.Background(), core.MergeReq{
+				SourceID: args[0],
+				TargetID: args[1],
+			})
+			if err != nil {
+				if dErr, ok := err.(*core.DomainError); ok && dErr.Code == core.ErrConflictDetected {
+					if jsonFlag {
+						printJSON(map[string]any{"ok": false, "error": err.Error(), "conflict": res.Data})
+						os.Exit(1)
+					}
+					fmt.Printf("Merge conflict detected: %v\n", err)
+					conflict := res.Data.(*core.Conflict)
+					fmt.Printf("Conflict ID: %s\n", conflict.ID)
+					fmt.Println("\nTo resolve this conflict, please edit the Distilled State manually or run again specifying the resolved conflict.")
+					os.Exit(1)
+				}
+				fmt.Printf("Merge failed: %v\n", err)
+				os.Exit(1)
+			}
+
+			if jsonFlag {
+				printJSON(res)
+				return
+			}
+
+			fmt.Printf("Dossier merged successfully. Surviving target ID: %s. New revision: %s\n", args[1], res.Data.(core.Revision))
+		},
+	}
+	mergeCmd.Flags().BoolVar(&jsonFlag, "json", false, "Output results in JSON format")
+
+	statusCmd := &cobra.Command{
+		Use:   "status <slug-or-id> <active|waiting|blocked|resolved|archived>",
+		Short: "Update status of a dossier",
+		Args:  cobra.ExactArgs(2),
+		Run: func(cmd *cobra.Command, args []string) {
+			homeDir := resolveHomeDir()
+			svc, err := wire(homeDir)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+			res, err := svc.SetStatus(context.Background(), core.SetStatusReq{
+				ID:     args[0],
+				Status: core.Status(args[1]),
+			})
+			if err != nil {
+				fmt.Printf("Status update failed: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("Status updated successfully. New revision: %s\n", res.Data.(core.Revision))
+		},
+	}
+
+	nextCmd := &cobra.Command{
+		Use:   "next <slug-or-id> <next-action>",
+		Short: "Update next action of a dossier",
+		Args:  cobra.ExactArgs(2),
+		Run: func(cmd *cobra.Command, args []string) {
+			homeDir := resolveHomeDir()
+			svc, err := wire(homeDir)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+			res, err := svc.Save(context.Background(), core.SaveReq{
+				ID:                 args[0],
+				FrontmatterUpdates: map[string]any{"next_action": args[1]},
+			})
+			if err != nil {
+				fmt.Printf("Next action update failed: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("Next action updated successfully. New revision: %s\n", res.Data.(core.Revision))
+		},
+	}
+
+	questionsCmd := &cobra.Command{
+		Use:   "questions <slug-or-id> <add|set|clear> [question...]",
+		Short: "Manage open questions of a dossier",
+		Args:  cobra.MinimumNArgs(2),
+		Run: func(cmd *cobra.Command, args []string) {
+			homeDir := resolveHomeDir()
+			svc, err := wire(homeDir)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+
+			recallRes, err := svc.Recall(context.Background(), core.RecallReq{ID: args[0]})
+			if err != nil {
+				fmt.Printf("Failed to read dossier: %v\n", err)
+				os.Exit(1)
+			}
+			recall := recallRes.Data.(core.RecallResult)
+			questions := recall.Frontmatter.OpenQuestions
+
+			op := args[1]
+			switch op {
+			case "set":
+				questions = args[2:]
+			case "add":
+				questions = append(questions, args[2:]...)
+			case "clear":
+				questions = nil
+			default:
+				fmt.Printf("Unknown operation %q. Must be add, set, or clear.\n", op)
+				os.Exit(1)
+			}
+
+			res, err := svc.Save(context.Background(), core.SaveReq{
+				ID:                 args[0],
+				BaseRevision:       recall.Revision,
+				FrontmatterUpdates: map[string]any{"open_questions": questions},
+			})
+			if err != nil {
+				fmt.Printf("Questions update failed: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("Open questions updated successfully. New revision: %s\n", res.Data.(core.Revision))
+		},
+	}
+
+	var importanceFlag string
+	var urgencyFlag string
+	var dueFlag string
+	priorityCmd := &cobra.Command{
+		Use:   "priority <slug-or-id>",
+		Short: "Update importance, urgency, and due date of a dossier",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			homeDir := resolveHomeDir()
+			svc, err := wire(homeDir)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+
+			recallRes, err := svc.Recall(context.Background(), core.RecallReq{ID: args[0]})
+			if err != nil {
+				fmt.Printf("Failed to read dossier: %v\n", err)
+				os.Exit(1)
+			}
+			recall := recallRes.Data.(core.RecallResult)
+
+			updates := make(map[string]any)
+			if importanceFlag != "" {
+				switch importanceFlag {
+				case "h":
+					updates["importance"] = "high"
+				case "m":
+					updates["importance"] = "medium"
+				case "l":
+					updates["importance"] = "low"
+				default:
+					updates["importance"] = importanceFlag
+				}
+			}
+			if urgencyFlag != "" {
+				switch urgencyFlag {
+				case "h":
+					updates["urgency"] = "high"
+				case "m":
+					updates["urgency"] = "medium"
+				case "l":
+					updates["urgency"] = "low"
+				default:
+					updates["urgency"] = urgencyFlag
+				}
+			}
+			if dueFlag != "" {
+				updates["due_date"] = dueFlag
+			}
+
+			res, err := svc.Save(context.Background(), core.SaveReq{
+				ID:                 args[0],
+				BaseRevision:       recall.Revision,
+				FrontmatterUpdates: updates,
+			})
+			if err != nil {
+				fmt.Printf("Priority update failed: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("Priority updated successfully. New revision: %s\n", res.Data.(core.Revision))
+		},
+	}
+	priorityCmd.Flags().StringVar(&importanceFlag, "importance", "", "Importance: h|m|l")
+	priorityCmd.Flags().StringVar(&urgencyFlag, "urgency", "", "Urgency: h|m|l")
+	priorityCmd.Flags().StringVar(&dueFlag, "due", "", "Due date (YYYY-MM-DD or relative)")
+
 	hookCmd := &cobra.Command{
 		Use:   "hook <session-start|session-end|pre-compaction>",
 		Short: "Run lifecycle integration hooks",
@@ -676,9 +877,19 @@ func Execute() {
 	rootCmd.AddCommand(linkCmd)
 	rootCmd.AddCommand(activeCmd)
 	rootCmd.AddCommand(switchCmd)
+	rootCmd.AddCommand(mergeCmd)
+	rootCmd.AddCommand(statusCmd)
+	rootCmd.AddCommand(nextCmd)
+	rootCmd.AddCommand(questionsCmd)
+	rootCmd.AddCommand(priorityCmd)
 	rootCmd.AddCommand(hookCmd)
 
-	if err := rootCmd.Execute(); err != nil {
+	return rootCmd
+}
+
+// Execute runs the cobra command parser.
+func Execute() {
+	if err := NewRootCmd().Execute(); err != nil {
 		os.Exit(1)
 	}
 }

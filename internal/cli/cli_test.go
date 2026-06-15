@@ -454,3 +454,130 @@ func TestCLIMilestone6(t *testing.T) {
 		t.Errorf("expected transcript artifact to be written in artifacts/")
 	}
 }
+
+func TestCLIMilestone7(t *testing.T) {
+	tempHome, err := os.MkdirTemp("", "dossier-cli-m7-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp home: %v", err)
+	}
+	defer os.RemoveAll(tempHome)
+
+	// Set home flag so CLI uses our temp directory
+	dossierHomeFlag = tempHome
+
+	svc, err := wire(tempHome)
+	if err != nil {
+		t.Fatalf("failed to wire: %v", err)
+	}
+
+	_, err = svc.Init(context.Background(), true)
+	if err != nil {
+		t.Fatalf("failed to init: %v", err)
+	}
+
+	// 1. Create a dossier
+	_, err = svc.Save(context.Background(), core.SaveReq{
+		DistilledStateMarkdown: "Initial distilled content",
+		FrontmatterUpdates: map[string]any{
+			"name":        "Target Dossier",
+			"status":      "active",
+			"next_action": "Initial action",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+	dossierID := "target-dossier"
+
+	// 2. Test status subcommand via Cobra
+	cmd := NewRootCmd()
+	cmd.SetArgs([]string{"status", dossierID, "waiting", "--home", tempHome})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("status cmd execution failed: %v", err)
+	}
+
+	// 3. Test next subcommand via Cobra
+	cmd = NewRootCmd()
+	cmd.SetArgs([]string{"next", dossierID, "Do something next", "--home", tempHome})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("next cmd execution failed: %v", err)
+	}
+
+	// 4. Test priority subcommand via Cobra
+	cmd = NewRootCmd()
+	cmd.SetArgs([]string{"priority", dossierID, "--importance", "h", "--urgency", "m", "--due", "2026-07-01", "--home", tempHome})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("priority cmd execution failed: %v", err)
+	}
+
+	// 5. Test questions subcommand via Cobra
+	cmd = NewRootCmd()
+	cmd.SetArgs([]string{"questions", dossierID, "set", "Question A", "Question B", "--home", tempHome})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("questions cmd execution failed: %v", err)
+	}
+
+	// Verify all updates are reflected in the store
+	d, err := svc.Recall(context.Background(), core.RecallReq{ID: dossierID})
+	if err != nil {
+		t.Fatalf("Recall failed: %v", err)
+	}
+	recall := d.Data.(core.RecallResult)
+
+	if recall.Frontmatter.Status != core.StatusWaiting {
+		t.Errorf("expected status 'waiting', got %s", recall.Frontmatter.Status)
+	}
+	if recall.Frontmatter.NextAction != "Do something next" {
+		t.Errorf("expected next_action 'Do something next', got %q", recall.Frontmatter.NextAction)
+	}
+	if recall.Frontmatter.Importance != core.ImportanceHigh || recall.Frontmatter.Urgency != core.UrgencyMedium {
+		t.Errorf("expected importance high, urgency medium; got %s/%s", recall.Frontmatter.Importance, recall.Frontmatter.Urgency)
+	}
+	if recall.Frontmatter.DueDate != "2026-07-01" {
+		t.Errorf("expected due date '2026-07-01', got %q", recall.Frontmatter.DueDate)
+	}
+	if len(recall.Frontmatter.OpenQuestions) != 2 || recall.Frontmatter.OpenQuestions[0] != "Question A" {
+		t.Errorf("expected open questions [Question A, Question B], got %v", recall.Frontmatter.OpenQuestions)
+	}
+
+	// 6. Create a source dossier to test merge
+	_, err = svc.Save(context.Background(), core.SaveReq{
+		DistilledStateMarkdown: "Source distilled content",
+		FrontmatterUpdates: map[string]any{
+			"name":   "Source Dossier",
+			"status": "waiting",
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to create source dossier: %v", err)
+	}
+	sourceID := "source-dossier"
+
+	// 7. Run merge subcommand via Cobra
+	cmd = NewRootCmd()
+	cmd.SetArgs([]string{"merge", sourceID, dossierID, "--home", tempHome})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("merge cmd execution failed: %v", err)
+	}
+
+	// Verify merge results
+	mergedD, err := svc.Recall(context.Background(), core.RecallReq{ID: dossierID})
+	if err != nil {
+		t.Fatalf("Recall failed: %v", err)
+	}
+	mergedRecall := mergedD.Data.(core.RecallResult)
+
+	if !strings.Contains(mergedRecall.DistilledState, "Source distilled content") {
+		t.Errorf("expected merged distilled state to contain source body")
+	}
+
+	// Verify source was archived
+	srcD, err := svc.Recall(context.Background(), core.RecallReq{ID: sourceID})
+	if err != nil {
+		t.Fatalf("Recall of source failed: %v", err)
+	}
+	srcRecall := srcD.Data.(core.RecallResult)
+	if srcRecall.Frontmatter.Status != core.StatusArchived {
+		t.Errorf("expected source status to be archived, got %s", srcRecall.Frontmatter.Status)
+	}
+}
