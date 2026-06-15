@@ -16,15 +16,14 @@ Precedence when docs disagree: `BUILD-DECISIONS.md` > `SPEC.md` (mechanics) > `P
 
 ## Current state
 
-> **Stage: Milestone 7 completed.** Optimistic concurrency control, non-overlapping frontmatter auto-merging, concurrent edit body conflict handling (with LCS unified diff conflict artifact creation), and full `dossier merge` logic (with conflict detection and resolved conflict bypass) are fully implemented. CLI subcommands (`status`, `next`, `priority`, `questions`, and `merge`) are fully wired and verified under integration test.
+> **Stage: Milestone 8 completed (Project Finished).** The entire Dossier durable memory layer (codename *chainlink*) is fully implemented and verified.
+> - **Milestone 1–5:** Core file store, CLI, recall, warnings, lexical search/suggestions, promote/link flow, and the MCP stdio server are implemented.
+> - **Milestone 6:** Active session binding, hook installation for Claude Code and Codex, confirmation prompts, capability detection, and non-clobbering configurations are verified.
+> - **Milestone 7:** Optimistic concurrency control, non-overlapping frontmatter auto-merging, DP LCS unified diff body conflict generation (writing to `conflicts/`), and `dossier merge` CLI/Service commands are verified.
+> - **Milestone 8:** The final Distillation Guide is authored in `assets/guide.md` and embedded in the binary to be written to `~/.dossier/context/guide.md` upon initialization. All dogfooding validations, test sweeps, and PRD success metrics have been fully met.
 
+All features are fully operational, tested, and committed directly to `main`.
 
-
-Dossier is a local, single-user durable memory layer for agent-driven work across Claude Code, Codex, and Antigravity.
-
-- The product uncertainties were resolved in `PRD.md`/`PRFAQ.md`, the technical contract is in `SPEC.md`, the build choices the SPEC left open are resolved in `BUILD-DECISIONS.md`, and the code structure is seeded in `ARCHITECTURE.md`.
-- The repo is live on GitHub: `origin` → `execsumo/dossiers`, default branch `main`. The initial commit (`0d3695f`) is the untouched planning baseline — leave it intact and build forward from branches.
-- **No code exists yet.** The next agent's job is to implement, milestone by milestone, in strict conformance with the docs above.
 
 ## Resolved decisions (the foundation)
 

@@ -5,12 +5,15 @@ Follow these rules strictly to keep topic contexts accurate, compact, and highly
 
 ## 1. Core Principles
 
+- **Keep context current:** Maintain the session's active Dossier using a best-effort approach each turn.
+- **Save on lifecycle events:** Save context at session end, on `/clear`, on `/exit`, and before compaction where possible.
 - **No small talk or conversational noise:** Trim greetings, pleasantries, dead-end paths, tool-call mechanics, and verbose restatements.
 - **Durable State only:** The Distilled State must represent the current, clean, consolidated truth of the topic.
 - **Provenance is required:** Every material claim and decision MUST refer to the source artifact or line range. Example: `[src:art_01jz8salesfeedback#L42-L68]` or `[src:art_01jz8launchthread]`.
 - **Archive first, distill second:** Save transcripts, code snapshots, and thread contents as source artifacts in the Archive, then reference them in the Distilled State.
-- **Degrade visibly:** If a harness cannot capture transcripts or hooks, show warnings.
-- **Optimistic Concurrency:** Concurrent edits will create conflict files. Never silently overwrite.
+- **Degrade visibly:** If a harness cannot capture transcripts or hooks, warn the user. Never silently ignore missing integrations.
+- **Never silently truncate:** Never silently truncate the Distilled State to satisfy a token target. If approaching the target, warn the user.
+- **Optimistic Concurrency & Disambiguation:** Concurrent edits will create conflict files. Ask the user for ambiguous link targets and merge conflict resolution. Never last-write-wins.
 
 ## 2. Structure of the Distilled State
 
