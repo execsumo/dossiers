@@ -384,7 +384,130 @@ type SearchReq struct {
 }
 
 func (s *Service) Search(ctx context.Context, req SearchReq) (Result, error) {
-	return Result{}, NewError(ErrInternal, "unimplemented in Milestone 2")
+	if req.Scope.DossierID != "" {
+		d, _, err := s.store.Read(req.Scope.DossierID)
+		if err != nil {
+			return Result{}, err
+		}
+		req.Scope.DossierID = d.Frontmatter.ID
+	}
+
+	hits, err := s.search.Search(ctx, req.Query, req.Scope)
+	if err != nil {
+		return Result{}, WrapError(ErrInternal, "search failed", err)
+	}
+
+	return Result{
+		OK:   true,
+		Data: hits,
+	}, nil
+}
+
+func (s *Service) ContextRefresh(ctx context.Context) (Result, error) {
+	fms, err := s.store.List("all")
+	if err != nil {
+		return Result{OK: false}, WrapError(ErrInternal, "failed to list dossiers for context refresh", err)
+	}
+
+	// Filter and score open dossiers (non-archived)
+	type scoredMeta struct {
+		fm    Frontmatter
+		score int
+	}
+
+	now := s.clock.Now()
+	var scored []scoredMeta
+	for _, fm := range fms {
+		if fm.Status != StatusArchived {
+			score := CalculatePriorityScore(fm, now)
+			scored = append(scored, scoredMeta{fm: fm, score: score})
+		}
+	}
+
+	// Sort open dossiers by priority score descending
+	sort.Slice(scored, func(i, j int) bool {
+		if scored[i].score != scored[j].score {
+			return scored[i].score > scored[j].score
+		}
+		if !scored[i].fm.LastTouchedAt.Equal(scored[j].fm.LastTouchedAt) {
+			return scored[i].fm.LastTouchedAt.Before(scored[j].fm.LastTouchedAt)
+		}
+		return scored[i].fm.UpdatedAt.Before(scored[j].fm.UpdatedAt)
+	})
+
+	var openDossiers []LibraryDossier
+	for _, sItem := range scored {
+		openDossiers = append(openDossiers, LibraryDossier{
+			Name:          sItem.fm.Name,
+			Status:        string(sItem.fm.Status),
+			Slug:          sItem.fm.Slug,
+			NextAction:    sItem.fm.NextAction,
+			PriorityScore: sItem.score,
+		})
+	}
+
+	// Detect harnesses and capabilities
+	harnesses := s.hreg.All()
+	var activeHarness Harness
+	var activeCaps Capabilities
+
+	for _, h := range harnesses {
+		caps, err := h.Detect()
+		if err == nil && (caps.MCP || caps.SessionStartHook || caps.SessionEndHook || caps.PreCompactionHook || caps.TranscriptCapture) {
+			activeHarness = h
+			activeCaps = caps
+			break
+		}
+	}
+
+	harnessName := "CLI"
+	harnessCaps := map[string]bool{
+		"MCP":               false,
+		"SessionStartHook":  false,
+		"SessionEndHook":    false,
+		"PreCompactionHook": false,
+		"TranscriptCapture": false,
+	}
+	var warnings []string
+
+	if activeHarness != nil {
+		harnessName = activeHarness.Name()
+		switch harnessName {
+		case "claude-code":
+			harnessName = "Claude Code"
+		case "codex":
+			harnessName = "Codex"
+		case "antigravity":
+			harnessName = "Antigravity"
+		}
+
+		harnessCaps["MCP"] = activeCaps.MCP
+		harnessCaps["SessionStartHook"] = activeCaps.SessionStartHook
+		harnessCaps["SessionEndHook"] = activeCaps.SessionEndHook
+		harnessCaps["PreCompactionHook"] = activeCaps.PreCompactionHook
+		harnessCaps["TranscriptCapture"] = activeCaps.TranscriptCapture
+
+		if harnessName == "Codex" && !activeCaps.TranscriptCapture {
+			warnings = append(warnings, "Transcript archive is unavailable in this session.")
+		}
+	} else {
+		warnings = append(warnings, "No harness session active. Run from within a supported client harness for full integration.")
+	}
+
+	libData := LibraryData{
+		Harness:      harnessName,
+		Capabilities: harnessCaps,
+		Warnings:     warnings,
+		OpenDossiers: openDossiers,
+	}
+
+	if err := s.store.WriteLibraryContext(libData); err != nil {
+		return Result{OK: false}, WrapError(ErrInternal, "failed to write library context", err)
+	}
+
+	return Result{
+		OK: true,
+	}, nil
 }
 
 type SwitchReq struct {

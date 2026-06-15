@@ -49,36 +49,20 @@ func (s *FSStore) Init() error {
 		return fmt.Errorf("failed to write guide.md: %w", err)
 	}
 
-	tmplContent, err := assets.FS.ReadFile("library.tmpl.md")
-	if err != nil {
-		return fmt.Errorf("failed to read embedded library template: %w", err)
-	}
-
-	tmpl, err := template.New("library").Parse(string(tmplContent))
-	if err != nil {
-		return fmt.Errorf("failed to parse library template: %w", err)
-	}
-
-	var rendered bytes.Buffer
-	data := map[string]any{
-		"Harness": "CLI",
-		"Capabilities": map[string]bool{
+	data := core.LibraryData{
+		Harness: "CLI",
+		Capabilities: map[string]bool{
 			"MCP":               false,
 			"SessionStartHook":  false,
 			"SessionEndHook":    false,
 			"PreCompactionHook": false,
 			"TranscriptCapture": false,
 		},
-		"Warnings":     []string{"No harness session active. Run from within a supported client harness for full integration."},
-		"OpenDossiers": []any{},
+		Warnings:     []string{"No harness session active. Run from within a supported client harness for full integration."},
+		OpenDossiers: []core.LibraryDossier{},
 	}
-	if err := tmpl.Execute(&rendered, data); err != nil {
-		return fmt.Errorf("failed to execute library template: %w", err)
-	}
-
-	libraryPath := filepath.Join(s.dossierHome, "context", "library.md")
-	if err := os.WriteFile(libraryPath, rendered.Bytes(), 0644); err != nil {
-		return fmt.Errorf("failed to write library.md: %w", err)
+	if err := s.WriteLibraryContext(data); err != nil {
+		return fmt.Errorf("failed to write initial library: %w", err)
 	}
 
 	return nil
@@ -694,4 +678,34 @@ func parseConflictFile(content string) (*core.Conflict, error) {
 	}
 
 	return &c, nil
+}
+
+// WriteLibraryContext renders the context library and writes it to context/library.md.
+func (s *FSStore) WriteLibraryContext(data core.LibraryData) error {
+	tmplContent, err := assets.FS.ReadFile("library.tmpl.md")
+	if err != nil {
+		return fmt.Errorf("failed to read embedded library template: %w", err)
+	}
+
+	tmpl, err := template.New("library").Parse(string(tmplContent))
+	if err != nil {
+		return fmt.Errorf("failed to parse library template: %w", err)
+	}
+
+	var rendered bytes.Buffer
+	if err := tmpl.Execute(&rendered, data); err != nil {
+		return fmt.Errorf("failed to execute library template: %w", err)
+	}
+
+	ctxDir := filepath.Join(s.dossierHome, "context")
+	if err := os.MkdirAll(ctxDir, 0755); err != nil {
+		return fmt.Errorf("failed to create context directory: %w", err)
+	}
+
+	libraryPath := filepath.Join(ctxDir, "library.md")
+	if err := os.WriteFile(libraryPath, rendered.Bytes(), 0644); err != nil {
+		return fmt.Errorf("failed to write library.md: %w", err)
+	}
+
+	return nil
 }

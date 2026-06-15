@@ -90,6 +90,7 @@ func (f *localFakeStore) ClearSessionBinding(id string) error                  {
 func (f *localFakeStore) WriteConflict(c *Conflict) error                      { return nil }
 func (f *localFakeStore) ReadConflict(id string) (*Conflict, error)            { return nil, nil }
 func (f *localFakeStore) ListConflicts() ([]Conflict, error)                   { return nil, nil }
+func (f *localFakeStore) WriteLibraryContext(data LibraryData) error           { return nil }
 
 func TestServiceListAndRecall(t *testing.T) {
 	fakeStore := newLocalFakeStore()

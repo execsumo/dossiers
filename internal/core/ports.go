@@ -29,6 +29,26 @@ type Store interface {
 	WriteConflict(conflict *Conflict) error
 	ReadConflict(conflictID string) (*Conflict, error)
 	ListConflicts() ([]Conflict, error)
+
+	// Context library
+	WriteLibraryContext(data LibraryData) error
+}
+
+// LibraryDossier represents a dossier summarized in the context library.
+type LibraryDossier struct {
+	Name          string `json:"name"`
+	Status        string `json:"status"`
+	Slug          string `json:"slug"`
+	NextAction    string `json:"next_action"`
+	PriorityScore int    `json:"priority_score"`
+}
+
+// LibraryData is the input data used to render the context library.md template.
+type LibraryData struct {
+	Harness      string           `json:"harness"`
+	Capabilities map[string]bool  `json:"capabilities"`
+	Warnings     []string         `json:"warnings"`
+	OpenDossiers []LibraryDossier `json:"open_dossiers"`
 }
 
 // SearchScope limits the scope of search operations.

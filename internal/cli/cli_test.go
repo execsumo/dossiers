@@ -135,3 +135,128 @@ func TestCLIOutputFormat(t *testing.T) {
 		t.Errorf("expected %q, got %q", expected, output)
 	}
 }
+
+func TestCLIMilestone3(t *testing.T) {
+	tempHome, err := os.MkdirTemp("", "dossier-cli-m3-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp home: %v", err)
+	}
+	defer os.RemoveAll(tempHome)
+
+	// Initialize the store directories (which also writes context/library.md)
+	svc, err := wire(tempHome)
+	if err != nil {
+		t.Fatalf("failed to wire: %v", err)
+	}
+
+	_, err = svc.Init(context.Background(), true)
+	if err != nil {
+		t.Fatalf("failed to init: %v", err)
+	}
+
+	// 1. Create a dossier using svc.Save
+	saveReq := core.SaveReq{
+		DistilledStateMarkdown: "# Product Specifications\n\nWe need to build a single Go binary.",
+		FrontmatterUpdates: map[string]any{
+			"name":        "Chainlink core engine",
+			"status":      "active",
+			"importance":  "high",
+			"urgency":     "high",
+			"next_action": "Implement the MCP server",
+		},
+	}
+	res, err := svc.Save(context.Background(), saveReq)
+	if err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+	// Let's list dossiers to get the actual ID
+	listRes, err := svc.List(context.Background(), core.ListReq{})
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	items := listRes.Data.([]core.ListItem)
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	realID := items[0].ID
+
+	// Write an artifact to the dossier
+	art := core.Artifact{
+		ID:            "art_test_m3",
+		DossierID:     realID,
+		Type:          core.ArtifactTypeSourceSnapshot,
+		Title:         "System design requirements document",
+		ContentFormat: core.ContentFormatText,
+		Content:       "Make sure it compiles into a single binary called dossier.",
+	}
+	// Save the dossier again with this artifact
+	saveReq2 := core.SaveReq{
+		ID:           realID,
+		BaseRevision: res.Data.(core.Revision),
+		Artifacts:    []core.Artifact{art},
+	}
+	_, err = svc.Save(context.Background(), saveReq2)
+	if err != nil {
+		t.Fatalf("Save with artifact failed: %v", err)
+	}
+
+	// 2. Perform global search
+	searchRes, err := svc.Search(context.Background(), core.SearchReq{
+		Query: "single",
+	})
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	hits := searchRes.Data.([]core.Hit)
+	if len(hits) != 2 {
+		t.Errorf("expected 2 hits (dossier body and artifact), got %d", len(hits))
+	}
+
+	// 3. Perform scoped search to this dossier
+	scopedRes, err := svc.Search(context.Background(), core.SearchReq{
+		Query: "single",
+		Scope: core.SearchScope{DossierID: realID},
+	})
+	if err != nil {
+		t.Fatalf("Scoped search failed: %v", err)
+	}
+	scopedHits := scopedRes.Data.([]core.Hit)
+	if len(scopedHits) != 2 {
+		t.Errorf("expected 2 scoped hits, got %d", len(scopedHits))
+	}
+
+	// 4. Perform scoped search to a different/non-existent dossier
+	_, err = svc.Search(context.Background(), core.SearchReq{
+		Query: "single",
+		Scope: core.SearchScope{DossierID: "dos_nonexistent"},
+	})
+	if err == nil {
+		t.Errorf("expected error for nonexistent dossier scope, got nil")
+	}
+
+	// 5. Run context refresh
+	refreshRes, err := svc.ContextRefresh(context.Background())
+	if err != nil {
+		t.Fatalf("ContextRefresh failed: %v", err)
+	}
+	if !refreshRes.OK {
+		t.Fatalf("ContextRefresh returned not OK")
+	}
+
+	// Read generated library.md
+	libBytes, err := os.ReadFile(filepath.Join(tempHome, "context", "library.md"))
+	if err != nil {
+		t.Fatalf("failed to read library.md: %v", err)
+	}
+	libContent := string(libBytes)
+
+	if !strings.Contains(libContent, "Harness:") {
+		t.Errorf("expected Harness: header in library.md, got:\n%s", libContent)
+	}
+	if !strings.Contains(libContent, "Chainlink core engine") {
+		t.Errorf("expected 'Chainlink core engine' in library.md, got:\n%s", libContent)
+	}
+	if !strings.Contains(libContent, "Implement the MCP server") {
+		t.Errorf("expected next action 'Implement the MCP server' in library.md, got:\n%s", libContent)
+	}
+}

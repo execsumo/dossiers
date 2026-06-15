@@ -16,7 +16,7 @@ Precedence when docs disagree: `BUILD-DECISIONS.md` > `SPEC.md` (mechanics) > `P
 
 ## Current state
 
-> **Stage: Milestone 2 completed.** File store persistence layer (CRUD, locks, atomic writes, ids/slugs, audit logging) is implemented. CLI commands `ls`, `show`, `path`, and `archive` are fully functional and tested.
+> **Stage: Milestone 3 completed.** Recall (with BPE token estimation and over-target warning), Search (with recursive native Go and ripgrep fast-path), and Context Library regeneration (`context/library.md`) are fully implemented and verified with integration tests.
 
 Dossier is a local, single-user durable memory layer for agent-driven work across Claude Code, Codex, and Antigravity.
 

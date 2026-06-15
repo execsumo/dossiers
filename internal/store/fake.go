@@ -133,3 +133,7 @@ func (f *FakeStore) ListConflicts() ([]core.Conflict, error) {
 	}
 	return list, nil
 }
+
+func (f *FakeStore) WriteLibraryContext(data core.LibraryData) error {
+	return nil
+}

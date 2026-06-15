@@ -5,7 +5,9 @@ import (
 	"dossier/internal/config"
 	"dossier/internal/core"
 	"dossier/internal/harness"
+	"dossier/internal/search"
 	"dossier/internal/store"
+	"dossier/internal/tokenizer"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -17,10 +19,11 @@ import (
 )
 
 var (
-	dossierHomeFlag string
-	yesFlag         bool
-	statusFlag      string
-	jsonFlag        bool
+	dossierHomeFlag   string
+	yesFlag           bool
+	statusFlag        string
+	jsonFlag          bool
+	dossierSearchFlag string
 )
 
 // Execute runs the cobra command parser.
@@ -288,12 +291,107 @@ func Execute() {
 	}
 	archiveCmd.Flags().BoolVar(&jsonFlag, "json", false, "Output results in JSON format")
 
+	searchCmd := &cobra.Command{
+		Use:   "search <query>",
+		Short: "Search distilled state and artifacts across dossiers",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			homeDir := resolveHomeDir()
+			svc, err := wire(homeDir)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+
+			req := core.SearchReq{
+				Query: args[0],
+				Scope: core.SearchScope{
+					DossierID: dossierSearchFlag,
+				},
+			}
+
+			res, err := svc.Search(context.Background(), req)
+			if err != nil {
+				fmt.Printf("Search failed: %v\n", err)
+				os.Exit(1)
+			}
+
+			if jsonFlag {
+				printJSON(res.Data)
+				return
+			}
+
+			hits, ok := res.Data.([]core.Hit)
+			if !ok {
+				fmt.Printf("Unexpected data type returned: %T\n", res.Data)
+				os.Exit(1)
+			}
+
+			if len(hits) == 0 {
+				fmt.Println("No matches found.")
+				return
+			}
+
+			for i, hit := range hits {
+				fmt.Printf("Dossier:  %s (%s)\n", hit.DossierName, hit.DossierID)
+				if hit.ArtifactID != "" {
+					fmt.Printf("Artifact: %s (%s)\n", hit.Title, hit.ArtifactID)
+				}
+				fmt.Printf("File:     %s\n", hit.Path)
+				if hit.LineNumber > 0 {
+					fmt.Printf("Line %d:  %s\n", hit.LineNumber, hit.Snippet)
+				} else {
+					fmt.Printf("Match:    %s\n", hit.Snippet)
+				}
+				if i < len(hits)-1 {
+					fmt.Println(strings.Repeat("-", 80))
+				}
+			}
+		},
+	}
+	searchCmd.Flags().StringVarP(&dossierSearchFlag, "dossier", "d", "", "Scope search to a specific dossier (slug or ID)")
+	searchCmd.Flags().BoolVar(&jsonFlag, "json", false, "Output results in JSON format")
+
+	contextCmd := &cobra.Command{
+		Use:   "context",
+		Short: "Manage the generated open-work context",
+	}
+
+	contextRefreshCmd := &cobra.Command{
+		Use:   "refresh",
+		Short: "Regenerate the context library",
+		Run: func(cmd *cobra.Command, args []string) {
+			homeDir := resolveHomeDir()
+			svc, err := wire(homeDir)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+
+			res, err := svc.ContextRefresh(context.Background())
+			if err != nil {
+				fmt.Printf("Context refresh failed: %v\n", err)
+				os.Exit(1)
+			}
+
+			if !res.OK {
+				fmt.Println("Context refresh failed.")
+				os.Exit(1)
+			}
+
+			fmt.Println("Context library regenerated successfully.")
+		},
+	}
+	contextCmd.AddCommand(contextRefreshCmd)
+
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(doctorCmd)
 	rootCmd.AddCommand(lsCmd)
 	rootCmd.AddCommand(showCmd)
 	rootCmd.AddCommand(pathCmd)
 	rootCmd.AddCommand(archiveCmd)
+	rootCmd.AddCommand(searchCmd)
+	rootCmd.AddCommand(contextCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -314,19 +412,6 @@ func printJSON(data any) {
 		os.Exit(1)
 	}
 	fmt.Println(string(jsonBytes))
-}
-
-// Stub adapters for pure domains
-type dummySearcher struct{}
-
-func (d *dummySearcher) Search(ctx context.Context, query string, scope core.SearchScope) ([]core.Hit, error) {
-	return nil, nil
-}
-
-type dummyTokenizer struct{}
-
-func (d *dummyTokenizer) Estimate(text string) int {
-	return 0
 }
 
 type realClock struct{}
@@ -350,8 +435,19 @@ func wire(dossierHome string) (*core.Service, error) {
 	}
 
 	storeAdapter := store.NewFSStore(dossierHome)
-	searchAdapter := &dummySearcher{}
-	tokAdapter := &dummyTokenizer{}
+
+	var searchAdapter core.Searcher
+	if search.IsRipgrepAvailable() {
+		searchAdapter = search.NewRipgrepSearcher(dossierHome)
+	} else {
+		searchAdapter = search.NewNativeSearcher(dossierHome)
+	}
+
+	tokAdapter, err := tokenizer.NewBPETokenizer()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize BPE tokenizer: %w", err)
+	}
+
 	hregAdapter := harness.NewRegistry(dossierHome)
 	clockAdapter := &realClock{}
 
