@@ -5,6 +5,7 @@ import (
 	"dossier/internal/config"
 	"dossier/internal/core"
 	"dossier/internal/harness"
+	"dossier/internal/mcp"
 	"dossier/internal/search"
 	"dossier/internal/store"
 	"dossier/internal/tokenizer"
@@ -384,6 +385,31 @@ func Execute() {
 	}
 	contextCmd.AddCommand(contextRefreshCmd)
 
+	mcpCmd := &cobra.Command{
+		Use:   "mcp",
+		Short: "Manage the MCP server interface",
+	}
+
+	mcpServeCmd := &cobra.Command{
+		Use:   "serve",
+		Short: "Run the MCP server over stdio",
+		Run: func(cmd *cobra.Command, args []string) {
+			homeDir := resolveHomeDir()
+			svc, err := wire(homeDir)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+
+			server := mcp.NewServer(svc, os.Stdin, os.Stdout)
+			if err := server.Run(context.Background()); err != nil {
+				fmt.Printf("MCP server exited with error: %v\n", err)
+				os.Exit(1)
+			}
+		},
+	}
+	mcpCmd.AddCommand(mcpServeCmd)
+
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(doctorCmd)
 	rootCmd.AddCommand(lsCmd)
@@ -392,6 +418,7 @@ func Execute() {
 	rootCmd.AddCommand(archiveCmd)
 	rootCmd.AddCommand(searchCmd)
 	rootCmd.AddCommand(contextCmd)
+	rootCmd.AddCommand(mcpCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

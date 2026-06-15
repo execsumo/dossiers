@@ -16,7 +16,7 @@ Precedence when docs disagree: `BUILD-DECISIONS.md` > `SPEC.md` (mechanics) > `P
 
 ## Current state
 
-> **Stage: Milestone 3 completed.** Recall (with BPE token estimation and over-target warning), Search (with recursive native Go and ripgrep fast-path), and Context Library regeneration (`context/library.md`) are fully implemented and verified with integration tests.
+> **Stage: Milestone 4 completed.** The Model Context Protocol (MCP) stdio server is fully implemented in `internal/mcp` and wired into `dossier mcp serve`. All 15 required tools are registered and verified against specification contracts (wrapped result envelopes and SPEC error code mapping) via unit tests.
 
 Dossier is a local, single-user durable memory layer for agent-driven work across Claude Code, Codex, and Antigravity.
 
