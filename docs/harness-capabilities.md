@@ -39,3 +39,54 @@ This document defines the integration capabilities and resulting tier for each s
 - **Hooks:** No hooks are supported.
 - **Session ID:** No stable session identifier is exposed.
 - **Degradation:** Relies entirely on manual CLI/TUI switching or MCP tool calls. Capability warnings must degrade visibly by appending warning structures to MCP responses.
+
+---
+
+## 3. Hook Schema and Installation Caveats
+
+### Hook Schema Formats
+To ensure hooks are not ignored by the harness executors, they must be registered in the correct array-of-matchers schema.
+
+#### Claude Code (`~/.claude/settings.json`)
+Requires the `"matcher"` key:
+```json
+"hooks": {
+  "SessionStart": [
+    {
+      "matcher": "*",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "/absolute/path/to/dossier hook session-start"
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### Codex (`~/.codex/hooks.json`)
+Uses a similar structure but without the `"matcher"` key:
+```json
+"hooks": {
+  "SessionStart": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "/absolute/path/to/dossier hook session-start"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Absolute Binary-Path Caveat (Dangling Hooks)
+During `dossier init`, the hook installer resolves the absolute path of the current `dossier` executable (`os.Executable()`) and writes it directly into the harness config hooks.
+
+> [!WARNING]
+> **Dangling Hook Paths:** If you move the compiled `dossier` binary, rename it, or compile a new version in a different directory, the harness hooks will continue trying to execute the old absolute path and will fail silently or loudly.
+>
+> **Resolution:** You must re-run `dossier init` from the new binary location to update the configuration paths automatically and idempotently.
+

@@ -23,10 +23,24 @@ func TestClaudeCodeHarness(t *testing.T) {
 		t.Errorf("expected empty capabilities when config doesn't exist, got %+v", caps)
 	}
 
-	// Create fake .claude.json
+	// Create fake .claude.json with a mix of styles to test migration and preservation
 	claudeJSONPath := filepath.Join(tempHome, ".claude.json")
 	initialConfig := map[string]any{
 		"mcpServers": map[string]any{},
+		"hooks": map[string]any{
+			"UserPromptSubmit": []any{
+				map[string]any{
+					"matcher": "*",
+					"hooks": []any{
+						map[string]any{
+							"type":    "command",
+							"command": "echo 'unrelated'",
+						},
+					},
+				},
+			},
+			"PreCompact": "old-style-string-hook",
+		},
 	}
 	configBytes, _ := json.Marshal(initialConfig)
 	if err := os.WriteFile(claudeJSONPath, configBytes, 0644); err != nil {
@@ -63,8 +77,55 @@ func TestClaudeCodeHarness(t *testing.T) {
 		t.Fatalf("hooks not found in config")
 	}
 
-	if !strings.Contains(hooks["SessionStart"].(string), "hook session-start") {
-		t.Errorf("expected SessionStart hook configured, got %q", hooks["SessionStart"])
+	// Assert the exact structure for SessionStart (Claude Code schema: array of matchers)
+	startVal, ok := hooks["SessionStart"].([]any)
+	if !ok {
+		t.Fatalf("expected SessionStart to be a slice, got %T", hooks["SessionStart"])
+	}
+	if len(startVal) != 1 {
+		t.Fatalf("expected SessionStart slice to have 1 matcher, got %d", len(startVal))
+	}
+	matcherObj, ok := startVal[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected matcher object, got %T", startVal[0])
+	}
+	if matcherObj["matcher"] != "*" {
+		t.Errorf("expected matcher to be '*', got %v", matcherObj["matcher"])
+	}
+	hooksList, ok := matcherObj["hooks"].([]any)
+	if !ok {
+		t.Fatalf("expected hooks list to be slice, got %T", matcherObj["hooks"])
+	}
+	if len(hooksList) != 1 {
+		t.Fatalf("expected hooks list to have 1 item, got %d", len(hooksList))
+	}
+	hookEntry, ok := hooksList[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected hook entry map, got %T", hooksList[0])
+	}
+	if hookEntry["type"] != "command" {
+		t.Errorf("expected type to be 'command', got %v", hookEntry["type"])
+	}
+	if !strings.Contains(hookEntry["command"].(string), "hook session-start") {
+		t.Errorf("expected command to contain 'hook session-start', got %v", hookEntry["command"])
+	}
+
+	// Assert PreCompact was converted from string to array
+	preCompactVal, ok := hooks["PreCompact"].([]any)
+	if !ok {
+		t.Fatalf("expected PreCompact to be converted to slice, got %T", hooks["PreCompact"])
+	}
+	if len(preCompactVal) != 1 {
+		t.Fatalf("expected PreCompact to have 1 matcher, got %d", len(preCompactVal))
+	}
+
+	// Assert unrelated hook UserPromptSubmit was preserved
+	unrelatedVal, ok := hooks["UserPromptSubmit"].([]any)
+	if !ok {
+		t.Fatalf("expected UserPromptSubmit to be slice, got %T", hooks["UserPromptSubmit"])
+	}
+	if len(unrelatedVal) != 1 {
+		t.Fatalf("expected UserPromptSubmit to have 1 item, got %d", len(unrelatedVal))
 	}
 
 	// Test idempotency: running Install again should not create new backup and should not change config
@@ -105,6 +166,28 @@ func TestCodexHarness(t *testing.T) {
 		t.Fatalf("failed to write fake config.toml: %v", err)
 	}
 
+	// Also write a hooks.json with a mix of styles to test migration and preservation
+	hooksPath := filepath.Join(codexDir, "hooks.json")
+	initialHooks := map[string]any{
+		"hooks": map[string]any{
+			"UserPromptSubmit": []any{
+				map[string]any{
+					"hooks": []any{
+						map[string]any{
+							"type":    "command",
+							"command": "echo 'unrelated'",
+						},
+					},
+				},
+			},
+			"Stop": "old-style-string-hook",
+		},
+	}
+	hooksBytes, _ := json.Marshal(initialHooks)
+	if err := os.WriteFile(hooksPath, hooksBytes, 0644); err != nil {
+		t.Fatalf("failed to write fake hooks.json: %v", err)
+	}
+
 	// Detect should now return capabilities
 	caps, err = h.Detect()
 	if err != nil {
@@ -121,7 +204,6 @@ func TestCodexHarness(t *testing.T) {
 	}
 
 	// Check that config is updated
-	hooksPath := filepath.Join(codexDir, "hooks.json")
 	updatedBytes, err := os.ReadFile(hooksPath)
 	if err != nil {
 		t.Fatalf("failed to read updated hooks.json: %v", err)
@@ -136,11 +218,49 @@ func TestCodexHarness(t *testing.T) {
 		t.Fatalf("hooks not found in config")
 	}
 
-	if !strings.Contains(hooks["SessionStart"].(string), "hook session-start") {
-		t.Errorf("expected SessionStart hook configured, got %q", hooks["SessionStart"])
+	// Assert SessionStart is a slice of maps (without matcher)
+	startVal, ok := hooks["SessionStart"].([]any)
+	if !ok {
+		t.Fatalf("expected SessionStart to be slice, got %T", hooks["SessionStart"])
 	}
-	if !strings.Contains(hooks["Stop"].(string), "hook session-end") {
-		t.Errorf("expected Stop hook configured, got %q", hooks["Stop"])
+	if len(startVal) != 1 {
+		t.Fatalf("expected SessionStart to have 1 entry, got %d", len(startVal))
+	}
+	matcherObj, ok := startVal[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected matcher object, got %T", startVal[0])
+	}
+	if _, hasMatcher := matcherObj["matcher"]; hasMatcher {
+		t.Errorf("expected Codex matcher object to NOT contain 'matcher' key, but got it")
+	}
+	hooksList, ok := matcherObj["hooks"].([]any)
+	if !ok {
+		t.Fatalf("expected hooks list, got %T", matcherObj["hooks"])
+	}
+	if len(hooksList) != 1 {
+		t.Fatalf("expected 1 hook entry, got %d", len(hooksList))
+	}
+	hookEntry, ok := hooksList[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected hook entry map, got %T", hooksList[0])
+	}
+	if !strings.Contains(hookEntry["command"].(string), "hook session-start") {
+		t.Errorf("expected command to contain 'hook session-start', got %v", hookEntry["command"])
+	}
+
+	// Assert Stop was converted from string to array
+	_, ok = hooks["Stop"].([]any)
+	if !ok {
+		t.Fatalf("expected Stop to be converted to slice, got %T", hooks["Stop"])
+	}
+
+	// Assert UserPromptSubmit was preserved
+	unrelatedVal, ok := hooks["UserPromptSubmit"].([]any)
+	if !ok {
+		t.Fatalf("expected UserPromptSubmit to be slice, got %T", hooks["UserPromptSubmit"])
+	}
+	if len(unrelatedVal) != 1 {
+		t.Fatalf("expected UserPromptSubmit to have 1 item, got %d", len(unrelatedVal))
 	}
 
 	// Test idempotency: running Install again should not create new backup and should not change config

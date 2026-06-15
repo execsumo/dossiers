@@ -110,11 +110,11 @@ func (c *CodexHarness) Install(opts core.InstallOpts) error {
 		hooksMap = make(map[string]any)
 	}
 
-	startHook, _ := hooksMap["SessionStart"].(string)
-	stopHook, _ := hooksMap["Stop"].(string)
+	startCmd := execCmd + " session-start"
+	stopCmd := execCmd + " session-end"
 
-	if strings.Contains(startHook, "hook session-start") &&
-		strings.Contains(stopHook, "hook session-end") {
+	if isHookConfigured(hooksMap["SessionStart"], startCmd) &&
+		isHookConfigured(hooksMap["Stop"], stopCmd) {
 		return nil // Already installed
 	}
 
@@ -136,8 +136,8 @@ func (c *CodexHarness) Install(opts core.InstallOpts) error {
 		}
 	}
 
-	hooksMap["SessionStart"] = execCmd + " session-start"
-	hooksMap["Stop"] = execCmd + " session-end"
+	hooksMap["SessionStart"] = updateHookArray(hooksMap["SessionStart"], startCmd, "hook session-start", false)
+	hooksMap["Stop"] = updateHookArray(hooksMap["Stop"], stopCmd, "hook session-end", false)
 	configMap["hooks"] = hooksMap
 
 	newData, err := json.MarshalIndent(configMap, "", "  ")

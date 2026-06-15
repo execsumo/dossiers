@@ -101,13 +101,13 @@ func (c *ClaudeCodeHarness) Install(opts core.InstallOpts) error {
 		hooksMap = make(map[string]any)
 	}
 
-	startHook, _ := hooksMap["SessionStart"].(string)
-	endHook, _ := hooksMap["SessionEnd"].(string)
-	preCompactHook, _ := hooksMap["PreCompact"].(string)
+	startCmd := execCmd + " session-start"
+	endCmd := execCmd + " session-end"
+	preCompactCmd := execCmd + " pre-compaction"
 
-	if strings.Contains(startHook, "hook session-start") &&
-		strings.Contains(endHook, "hook session-end") &&
-		strings.Contains(preCompactHook, "hook pre-compaction") {
+	if isHookConfigured(hooksMap["SessionStart"], startCmd) &&
+		isHookConfigured(hooksMap["SessionEnd"], endCmd) &&
+		isHookConfigured(hooksMap["PreCompact"], preCompactCmd) {
 		return nil
 	}
 
@@ -126,9 +126,9 @@ func (c *ClaudeCodeHarness) Install(opts core.InstallOpts) error {
 		return fmt.Errorf("failed to create config backup: %w", err)
 	}
 
-	hooksMap["SessionStart"] = execCmd + " session-start"
-	hooksMap["SessionEnd"] = execCmd + " session-end"
-	hooksMap["PreCompact"] = execCmd + " pre-compaction"
+	hooksMap["SessionStart"] = updateHookArray(hooksMap["SessionStart"], startCmd, "hook session-start", true)
+	hooksMap["SessionEnd"] = updateHookArray(hooksMap["SessionEnd"], endCmd, "hook session-end", true)
+	hooksMap["PreCompact"] = updateHookArray(hooksMap["PreCompact"], preCompactCmd, "hook pre-compaction", true)
 	configMap["hooks"] = hooksMap
 
 	newData, err := json.MarshalIndent(configMap, "", "  ")

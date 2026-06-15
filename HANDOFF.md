@@ -16,13 +16,14 @@ Precedence when docs disagree: `BUILD-DECISIONS.md` > `SPEC.md` (mechanics) > `P
 
 ## Current state
 
-> **Stage: Milestone 8 completed (Project Finished).** The entire Dossier durable memory layer (codename *chainlink*) is fully implemented and verified.
+> **Stage: Milestone 8 completed (Project Finished) with Hook Hotfix.** The entire Dossier durable memory layer (codename *chainlink*) is fully implemented and verified.
 > - **Milestone 1–5:** Core file store, CLI, recall, warnings, lexical search/suggestions, promote/link flow, and the MCP stdio server are implemented.
-> - **Milestone 6:** Active session binding, hook installation for Claude Code and Codex, confirmation prompts, capability detection, and non-clobbering configurations are verified.
+> - **Milestone 6:** Active session binding, hook installation for Claude Code and Codex, confirmation prompts, capability detection, and non-clobbering configurations are verified. *Note: Fixed a blocking issue where hooks were written in a simplified string format that Claude Code/Codex ignored. Replaced with the correct array-of-matchers format while preserving other hooks.*
 > - **Milestone 7:** Optimistic concurrency control, non-overlapping frontmatter auto-merging, DP LCS unified diff body conflict generation (writing to `conflicts/`), and `dossier merge` CLI/Service commands are verified.
 > - **Milestone 8:** The final Distillation Guide is authored in `assets/guide.md` and embedded in the binary to be written to `~/.dossier/context/guide.md` upon initialization. All dogfooding validations, test sweeps, and PRD success metrics have been fully met.
 
 All features are fully operational, tested, and committed directly to `main`.
+
 
 
 ## Resolved decisions (the foundation)
