@@ -7,7 +7,7 @@
 
 ## 1. Purpose
 
-Build Dossier as a local, single-user memory layer for long-running agent work. A Dossier is a durable topic with a curated Markdown **Distilled State**, a source-retaining **Archive** of captured artifacts, and an append-only audit log. v1 supports Claude Code, Codex, and Antigravity through MCP, CLI/TUI, context files, and harness-specific hooks where available.
+Build Dossier as a local, single-user memory layer for long-running agent work. A Dossier is a durable topic with a curated Markdown **Distilled State**, a source-retaining **Archive** of captured artifacts, and an append-only audit log. v1 supports Claude Code through MCP, CLI/TUI, context files, and lifecycle hooks.
 
 The product must optimize for agent-initiated use: when a supported agent session starts, the agent should see the user's Dossier library, understand capability limitations for that harness/session, and help the user continue or create a Dossier without forcing a separate CLI workflow.
 
@@ -82,7 +82,7 @@ Store layout:
     audit.log
 ```
 
-`config.yaml` records install settings, harness capability tiers, default token target, and optional custom priority weights.
+`config.yaml` records install settings, detected harness capabilities, default token target, and optional custom priority weights.
 
 `context/library.md` is the generated open-work context file for harnesses without deterministic hooks.
 
@@ -234,7 +234,7 @@ Rules:
 Example:
 
 ```json
-{"ts":"2026-06-14T16:10:00-07:00","event":"save","dossier_id":"dos_...","actor":"agent:codex","session_id":"sess_...","before_revision":"rev_a","after_revision":"rev_b","artifacts_added":["art_..."],"token_estimate":8420}
+{"ts":"2026-06-14T16:10:00-07:00","event":"save","dossier_id":"dos_...","actor":"agent:claude-code","session_id":"sess_...","before_revision":"rev_a","after_revision":"rev_b","artifacts_added":["art_..."],"token_estimate":8420}
 ```
 
 Required event types:
@@ -271,7 +271,7 @@ Binding fields:
 ```json
 {
   "session_binding_id": "sess_01jz8example000000000000000",
-  "harness": "codex",
+  "harness": "claude-code",
   "dossier_id": "dos_01jz8example000000000000000",
   "bound_at": "2026-06-14T16:00:00-07:00",
   "last_seen_revision": "rev_01jz8example000000000000000",
@@ -301,38 +301,25 @@ Switching active Dossier must:
 
 ---
 
-## 6. Harness Capability Tiers
+## 6. Harness Capabilities
 
-v1 supports Claude Code, Codex, and Antigravity. The SPEC must map each harness to a tier during implementation discovery.
-
-### 6.1 Tier Definitions
-
-**Tier 1: hooks + MCP + transcript capture**
+v1 supports **Claude Code only.** Claude Code provides the full capability set Dossier relies on:
 
 - Session-start surfacing is deterministic.
 - Session-end save is deterministic.
-- Pre-compaction save is deterministic where the harness exposes compaction.
+- Pre-compaction save is deterministic.
 - MCP tools work.
 - Raw transcript capture works.
 
-**Tier 2: hooks + MCP, no transcript capture**
+Other harnesses (e.g. Codex, Antigravity) reach only degraded capability levels — missing transcript capture and/or deterministic session-start/session-end hooks — which are insufficient for Dossier's guarantees, so they are out of scope for v1.
 
-- Session-start surfacing is deterministic.
-- Session-end/pre-compaction save works where exposed.
-- MCP tools work.
-- Transcript archive is unavailable.
-- Install and session-start notices must warn.
+### 6.1 Visible Degradation
 
-**Tier 3: MCP/context file only**
-
-- MCP tools and/or context-file recall work.
-- Deterministic session-start/session-end guarantees are unavailable.
-- Transcript archive may be unavailable.
-- Install and session-start notices must warn.
+Even within Claude Code, an expected capability may be unavailable in a given session (e.g. transcript access). When that happens, Dossier must degrade visibly, never silently: install and session-start notices must warn about the missing capability rather than skip it quietly.
 
 ### 6.2 Capability Discovery Task
 
-Before implementation, verify for each harness:
+Before implementation, verify for Claude Code:
 
 - MCP server registration path.
 - Slash command support.
@@ -383,8 +370,8 @@ dossier doctor
 - Installs Distillation Guide.
 - Generates `context/library.md`.
 - Detects configured harnesses where possible.
-- Prompts for per-harness confirmation before updating user/global configurations to register the Dossier MCP server and lifecycle hooks, preserving existing third-party servers and hooks (never-clobber behavior). Writes each to the file the harness actually reads (for Claude Code, hooks → `~/.claude/settings.json`, MCP → `~/.claude.json`; for Codex, both → `~/.codex/config.toml`) and idempotently migrates stale entries an older build wrote to the wrong file.
-- Prints capability tier and warnings for Claude Code, Codex, and Antigravity.
+- Prompts for confirmation before updating user/global configurations to register the Dossier MCP server and lifecycle hooks, preserving existing third-party servers and hooks (never-clobber behavior). Writes each to the file Claude Code actually reads (hooks → `~/.claude/settings.json`, MCP → `~/.claude.json`) and idempotently migrates stale entries an older build wrote to the wrong file.
+- Prints detected capabilities and warnings for Claude Code.
 - Does not fail if a harness config cannot be updated or hooks are unsupported; warns visibly.
 
 `dossier ls`
@@ -586,7 +573,7 @@ Input:
   "distilled_state_markdown": "...",
   "session_content": "...",
   "transcript": null,
-  "harness": "codex"
+  "harness": "claude-code"
 }
 ```
 
@@ -654,7 +641,7 @@ When supported, session start injection includes:
 ```markdown
 # Dossier Library
 
-Harness: Codex
+Harness: Claude Code
 Capabilities:
 - MCP: available
 - Session-start hook: available
@@ -898,21 +885,22 @@ Must:
 - Write `config.yaml`.
 - Write Distillation Guide.
 - Generate library context file.
-- Detect Claude Code, Codex, and Antigravity config availability where possible.
+- Detect Claude Code config availability where possible.
 - Attempt to install/register MCP and hooks only where supported and safe.
-- Print capability matrix and warnings.
+- Print detected capabilities and warnings.
 
 Example output:
 
 ```text
 Dossier initialized at ~/.dossier
 
-Harness support:
-- Claude Code: Tier 1 candidate — MCP, hooks, transcript capture detected
-- Codex: Tier 2 candidate — MCP/hooks detected, transcript capture unavailable
-- Antigravity: Tier 3 candidate — context/MCP fallback only
-
-Warning: Codex transcript archive unavailable. Dossier will say this at session start.
+Claude Code integration:
+- detected
+- MCP: available
+- Session-start hook: available
+- Session-end hook: available
+- Pre-compaction hook: available
+- Transcript capture: available
 ```
 
 ### 13.2 `dossier doctor`
@@ -980,9 +968,9 @@ Checks:
 
 ### 14.7 Harness Transparency
 
-- `dossier init` reports capability tier per supported harness.
+- `dossier init` reports detected Claude Code capabilities.
 - Session-start context reports missing hooks/transcript capture.
-- Tier 3 still supports recall/save/search through MCP/context-file path.
+- recall/save/search remain available through the MCP/context-file path even when hooks are unavailable.
 
 ### 14.8 Concurrency
 
@@ -1041,7 +1029,7 @@ Checks:
 
 - Implement session binding.
 - Implement switch/active.
-- Install hooks for tier-supported harnesses.
+- Install hooks for Claude Code.
 - Add session-start library injection.
 - Add session-end/pre-compaction save where supported.
 
@@ -1055,7 +1043,7 @@ Checks:
 ### Milestone 8 — Distillation Guide And Dogfood
 
 - Ship initial Distillation Guide with examples.
-- Dogfood across Claude Code, Codex, and Antigravity.
+- Dogfood across real Claude Code sessions.
 - Measure success metrics from PRD.
 - Tighten guide and harness warnings.
 
@@ -1066,11 +1054,11 @@ Checks:
 These are not product blockers; they are discovery tasks for build planning.
 
 1. Which v1 language, Go or Rust, gives the fastest reliable MCP + TUI + cross-platform binary path?
-2. For each supported harness, what exact config files and hooks are available?
-3. Can any supported harness expose raw transcripts safely and deterministically?
-4. Can each harness provide a stable session id?
-5. What is the safest install behavior for modifying harness configs?
-6. Should hook installation require explicit per-harness confirmation in `dossier init`?
+2. For Claude Code, what exact config files and hooks are available?
+3. Can Claude Code expose raw transcripts safely and deterministically?
+4. Can Claude Code provide a stable session id?
+5. What is the safest install behavior for modifying Claude Code's config?
+6. Should hook installation require explicit confirmation in `dossier init`?
 7. Which tokenizer library best approximates Opus 4.8 while staying lightweight?
 8. Should `ripgrep` be a soft dependency, or should v1 implement native search to preserve single-binary purity?
 9. What exact Markdown provenance syntax is easiest for agents to maintain and for `doctor` to validate?
@@ -1084,12 +1072,12 @@ The tooling will become effective fastest through dogfood loops rather than abst
 
 Recommended partnership rhythm:
 
-1. **Harness reality pass:** use your actual Claude Code, Codex, and Antigravity setups to map hooks, transcript access, config files, and session ids.
+1. **Harness reality pass:** use your actual Claude Code setup to map hooks, transcript access, config files, and session ids.
 2. **Dossier seed set:** create 10-20 real Dossiers from your current work, including messy ones, clean ones, blocked ones, and resolved ones.
 3. **Distillation review sessions:** compare generated Distilled State against your memory of the work; tune the Distillation Guide rather than adding confirmation gates.
-4. **Resume drills:** intentionally resume topics in a different agent than the one that created them; record what was missing or bloated.
+4. **Resume drills:** intentionally resume topics in a different Claude Code session than the one that created them; record what was missing or bloated.
 5. **Ambiguity drills:** test promote/link against similar topics to tune suggestion confidence and wording.
 6. **Failure drills:** force unavailable transcript, over-target Distilled State, concurrent edits, and merge conflicts; verify warnings feel clear rather than noisy.
-7. **Weekly metric check:** track cross-agent resume success, provenance misses, over-target warnings, and time-to-find-next-topic.
+7. **Weekly metric check:** track cross-session resume success, provenance misses, over-target warnings, and time-to-find-next-topic.
 
 The important collaboration mode: you provide real topic workflows and judgment about whether the agent resumed with the right state; the implementation should make every hidden limitation explicit and every recovery path easy.

@@ -16,8 +16,6 @@ func NewRegistry(dossierHome string) *Registry {
 	return &Registry{
 		harnesses: []core.Harness{
 			NewClaudeCodeHarness(dossierHome),
-			NewCodexHarness(dossierHome),
-			NewAntigravityHarness(dossierHome),
 		},
 	}
 }
@@ -72,7 +70,8 @@ func isHookConfigured(existingVal any, cmd string) bool {
 }
 
 // updateHookArray parses, updates (preserving existing items), and returns the new hook array.
-func updateHookArray(existingVal any, cmd string, suffix string, isClaudeCode bool) []any {
+// Claude Code hook arrays are keyed by a "matcher" object; new hooks attach to the "*" matcher.
+func updateHookArray(existingVal any, cmd string, suffix string) []any {
 	var arr []any
 	if existingArr, ok := existingVal.([]any); ok {
 		arr = existingArr
@@ -128,13 +127,7 @@ func updateHookArray(existingVal any, cmd string, suffix string, isClaudeCode bo
 		if !ok {
 			continue
 		}
-		if isClaudeCode {
-			m, _ := itemMap["matcher"].(string)
-			if m == "*" {
-				targetMap = itemMap
-				break
-			}
-		} else {
+		if m, _ := itemMap["matcher"].(string); m == "*" {
 			targetMap = itemMap
 			break
 		}
@@ -150,13 +143,10 @@ func updateHookArray(existingVal any, cmd string, suffix string, isClaudeCode bo
 		hooksArr = append(hooksArr, newHook)
 		targetMap["hooks"] = hooksArr
 	} else {
-		newMatcher := map[string]any{
-			"hooks": []any{newHook},
-		}
-		if isClaudeCode {
-			newMatcher["matcher"] = "*"
-		}
-		arr = append(arr, newMatcher)
+		arr = append(arr, map[string]any{
+			"matcher": "*",
+			"hooks":   []any{newHook},
+		})
 	}
 
 	return arr

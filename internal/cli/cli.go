@@ -90,28 +90,28 @@ func NewRootCmd() *cobra.Command {
 
 			dataMap, ok := res.Data.(map[string]any)
 			if ok {
-				tiers, ok := dataMap["harness_tiers"].(map[string]string)
-				if ok {
-					fmt.Println("Harness support:")
-					names := []string{"claude-code", "codex", "antigravity"}
-					harnessLabels := map[string]string{
-						"claude-code": "Claude Code",
-						"codex":       "Codex",
-						"antigravity": "Antigravity",
-					}
-					descriptions := map[string]string{
-						"claude-code": "Tier 1 candidate — MCP, hooks, transcript capture detected",
-						"codex":       "Tier 2 candidate — MCP/hooks detected, transcript capture unavailable",
-						"antigravity": "Tier 3 candidate — context/MCP fallback only",
-					}
-					for _, name := range names {
-						tier := tiers[name]
-						label := harnessLabels[name]
-						desc := descriptions[name]
-						fmt.Printf("- %s: %s (%s)\n", label, tier, desc)
-					}
-					fmt.Println()
+				detected, _ := dataMap["harness_detected"].(bool)
+				caps, _ := dataMap["harness_capabilities"].(map[string]bool)
+				fmt.Println("Claude Code integration:")
+				if detected {
+					fmt.Println("- detected")
+				} else {
+					fmt.Println("- not detected — run from within Claude Code for full integration")
 				}
+				if caps != nil {
+					avail := func(b bool) string {
+						if b {
+							return "available"
+						}
+						return "unavailable"
+					}
+					fmt.Printf("- MCP: %s\n", avail(caps["MCP"]))
+					fmt.Printf("- Session-start hook: %s\n", avail(caps["SessionStartHook"]))
+					fmt.Printf("- Session-end hook: %s\n", avail(caps["SessionEndHook"]))
+					fmt.Printf("- Pre-compaction hook: %s\n", avail(caps["PreCompactionHook"]))
+					fmt.Printf("- Transcript capture: %s\n", avail(caps["TranscriptCapture"]))
+				}
+				fmt.Println()
 			}
 
 			for _, warning := range res.Warnings {

@@ -1,12 +1,11 @@
 /*
-Package harness implements capability detection and hook integration for agent clients.
+Package harness implements capability detection and hook integration for Claude Code.
 
-It provides implementations of core.Harness and core.HarnessRegistry for:
-- Claude Code (Tier 1 capability target)
-- Codex (Tier 2 capability target)
-- Antigravity (Tier 3 capability target)
-
-It validates integration options and config files (like ~/.claude.json or ~/.codex/config.toml)
-to classify harness support into tiers and manage hook hooks installations.
+It provides the implementation of core.Harness and core.HarnessRegistry for Claude Code,
+the single supported client harness in v1. It reads, merges, and writes Claude Code's
+config (~/.claude.json and ~/.claude/settings.json) to register the Dossier MCP server
+and lifecycle hooks, detecting available capabilities (MCP, session-start/end and
+pre-compaction hooks, transcript capture) so missing ones can be surfaced rather than
+silently skipped.
 */
 package harness

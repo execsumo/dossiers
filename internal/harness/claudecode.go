@@ -229,9 +229,9 @@ func (c *ClaudeCodeHarness) Install(opts core.InstallOpts) error {
 	// Update and write hooks if needed (hook change or stale-MCP migration)
 	if !hooksOk || staleMCPInHooks {
 		if !hooksOk {
-			hooksMap["SessionStart"] = updateHookArray(hooksMap["SessionStart"], startCmd, "hook session-start", true)
-			hooksMap["SessionEnd"] = updateHookArray(hooksMap["SessionEnd"], endCmd, "hook session-end", true)
-			hooksMap["PreCompact"] = updateHookArray(hooksMap["PreCompact"], preCompactCmd, "hook pre-compaction", true)
+			hooksMap["SessionStart"] = updateHookArray(hooksMap["SessionStart"], startCmd, "hook session-start")
+			hooksMap["SessionEnd"] = updateHookArray(hooksMap["SessionEnd"], endCmd, "hook session-end")
+			hooksMap["PreCompact"] = updateHookArray(hooksMap["PreCompact"], preCompactCmd, "hook pre-compaction")
 			hooksConfigMap["hooks"] = hooksMap
 		}
 

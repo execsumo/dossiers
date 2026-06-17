@@ -12,16 +12,16 @@ This document closes the implementation-discovery questions so the build can sta
 | # | Question (SPEC §16 / HANDOFF) | Decision | Why |
 |---|---|---|---|
 | **B1** | Language: Go or Rust? | **Go.** | Fastest reliable path to a cross-platform single binary; mature MCP-over-stdio SDK; the app is I/O- and file-bound, not CPU-bound, so Rust's performance edge is unused. Simpler concurrency for the optimistic-locking / atomic-write needs. |
-| **B2** | First harness target? | **Claude Code.** | Almost certainly Tier 1 (hooks + MCP + transcript capture). Validate the full deterministic happy path against a known-good baseline first; Codex and Antigravity then degrade *down* from there. |
+| **B2** | Harness target? | **Claude Code only (v1).** | Claude Code provides the full deterministic capability set (hooks + MCP + transcript capture). Other harnesses (Codex, Antigravity) only reach degraded capability levels that are insufficient for Dossier's guarantees, so v1 supports Claude Code exclusively. |
 | **B3** | TUI extent in v1? | **Rich TUI** (Bubble Tea). | Full-screen open-work dashboard, status/priority editing, list+switch, and merge/link conflict resolution. CLI flags remain the scriptable surface; the TUI is the interactive surface. |
 | **B4** | Tokenizer choice (SPEC §11.4)? | **Embedded BPE vocab** (o200k/cl100k-class), compiled into the binary, benchmarked against **Opus 4.8** as the reference per PRD §6. Lives behind a `Tokenizer` port so it can be swapped. | Keeps single-binary purity; precision per target model is explicitly not required. Caveat documented in `README.md`. |
 | **B5** | `ripgrep` soft-dep vs native search (SPEC §11.3, Q8)? | **Native Go recursive scan is the default**; `ripgrep` is auto-detected and used as a fast path when present. Both behind a `Searcher` port. | Preserves single-binary purity (no hard dependency) while taking the speed win when `rg` exists. Best of both. |
 | **B6** | Provenance syntax (Q9)? | Adopt the SPEC §4.2 form verbatim: `[src:art_<id>#L<a>-L<b>]`, or `[src:art_<id>]` when no line range. `doctor` validates by regex + reference resolution. | One syntax, easy for agents to emit and for `doctor` to parse and resolve. |
 | **B7** | Safe install behavior for modifying harness configs (Q5)? | **Never clobber.** Read → merge → write, with a timestamped backup of any file touched, fully **idempotent** (re-running `init` is a no-op if already correct). | Harness config files are the user's; corrupting them is the worst failure mode. |
-| **B8** | Per-harness hook-install confirmation (Q6)? | **Yes** — `dossier init` prompts per harness before modifying that harness's config, unless `--yes`/non-interactive. | Modifying another tool's config without consent is hostile; explicit opt-in per harness. |
+| **B8** | Hook-install confirmation (Q6)? | **Yes** — `dossier init` prompts before modifying Claude Code's config, unless `--yes`/non-interactive. | Modifying another tool's config without consent is hostile; explicit opt-in. |
 | **B9** | TUI vs plain CLI split (Q10)? | Both. Every operation is reachable via **CLI flags** (scriptable, `--json`) *and* the relevant ones via the **TUI**. The MCP/CLI/TUI all call one core service (see `ARCHITECTURE.md`) so behavior is identical. | Satisfies the "single command" capture constraint (PRD §4.10) and the agent-led happy path simultaneously. |
 | **B10** | Self-Install Path | **Idempotent stable-path copy.** Add `dossier install` (default `~/.local/bin/dossier`), and have `init` offer self-install if run from a volatile/build dir. | Keeps harness configs pointing to a stable location that won't break when rebuilding or moving the volatile build binary. |
-| **B11** | MCP Registration | **Harness config auto-wiring.** Register both MCP stdio server (command = stable path, args = `[mcp, serve]`) and lifecycle hooks during `init` after confirmation. Write each to the location the harness actually reads — for Claude Code, hooks → `~/.claude/settings.json`, MCP → `~/.claude.json`; for Codex, both → `~/.codex/config.toml`. `init` migrates stale entries an older build wrote to the wrong file. | Connects both MCP and lifecycle hooks automatically; conflating the two destinations (e.g. MCP in `settings.json`) silently fails because Claude Code ignores it. |
+| **B11** | MCP Registration | **Harness config auto-wiring.** Register both the MCP stdio server (command = stable path, args = `[mcp, serve]`) and lifecycle hooks during `init` after confirmation. Write each to the location Claude Code actually reads — hooks → `~/.claude/settings.json`, MCP → `~/.claude.json`. `init` migrates stale entries an older build wrote to the wrong file. | Connects both MCP and lifecycle hooks automatically; conflating the two destinations (e.g. MCP in `settings.json`) silently fails because Claude Code ignores it. |
 
 ---
 
@@ -47,13 +47,11 @@ These are smaller inconsistencies a dev agent *will* hit. Resolved here; mechani
 
 ## Still genuinely deferred (do NOT resolve by guessing — these are discovery output)
 
-These can only be answered by touching the real harnesses; they are the deliverable of Milestone 1, captured in `docs/harness-capabilities.md`:
+These can only be answered by touching the real harness; they are the deliverable of Milestone 1, captured in `docs/harness-capabilities.md`:
 
-- Exact config-file paths and hook formats for Claude Code, Codex, Antigravity (SPEC §16 Q2).
-- Whether/how each harness exposes raw transcripts deterministically (Q3).
-- Whether each harness provides a stable session id (Q4).
-
-Per B2, anchor this on **Claude Code** first and get one harness fully Tier-1 before generalizing.
+- Exact config-file paths and hook formats for Claude Code (SPEC §16 Q2).
+- Whether/how Claude Code exposes raw transcripts deterministically (Q3).
+- Whether Claude Code provides a stable session id (Q4).
 
 ---
 
