@@ -90,16 +90,10 @@ One Go binary serves the CLI, the MCP-over-stdio server, and the session hooks. 
 
 ## Good to know
 
-- **Claude Code only (v1).** Claude Code exposes the full set of hooks, MCP, and transcript capture Dossier relies on. Other harnesses (Codex, Antigravity) are out of scope for v1. If a capability is missing in a given session, Dossier says so at install and at session start rather than failing silently.
+- **Claude Code only.** Claude Code exposes the full set of hooks, MCP, and transcript capture Dossier relies on. Other harnesses (Codex, Antigravity) are out of scope. If a capability is missing in a given session, Dossier says so at install and at session start rather than failing silently.
 - **Config lives in two files.** Hooks go in `~/.claude/settings.json`; the MCP server goes in `~/.claude.json` (the only place Claude Code reads user-scope MCP servers). Both store the absolute path of the stable binary — if you rebuild, rename, or move it, re-run `dossier install` then `dossier init` to re-bind, idempotently.
 - **Token counts are estimates.** Dossier uses a BPE tokenizer benchmarked against Opus 4.8; it won't match every model exactly. The 100k-token figure is a configurable warning threshold, not a hard cap — Dossier warns, it never silently truncates.
 - **Wiring it up by hand.** If you'd rather not let `init` edit your config: register the MCP server with `claude mcp add dossier -- dossier mcp serve`, and run `dossier hook session-start` to see what the start hook emits.
-
-## Project status
-
-All core milestones are implemented: file store, recall/search, MCP server, session hooks, promote/link/merge, concurrency handling, the Distillation Guide, and the interactive TUI. See `HANDOFF.md` for per-milestone status and `SPEC.md` for the full contract.
-
-*Naming:* **Dossier** is the tool; *a Dossier* is one topic; *Dossiers* are many. The repo directory is `dossiers`; the project is **Dossier**.
 
 ## License
 
