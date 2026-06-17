@@ -110,6 +110,13 @@ func (c *ClaudeCodeHarness) Install(opts core.InstallOpts) error {
 		return nil
 	}
 
+	if resolved, err := filepath.EvalSymlinks(hooksPath); err == nil {
+		hooksPath = resolved
+	}
+	if resolved, err := filepath.EvalSymlinks(claudeJSONPath); err == nil {
+		claudeJSONPath = resolved
+	}
+
 	stablePath := opts.StableBinaryPath
 	if stablePath == "" {
 		executable, err := os.Executable()
@@ -196,6 +203,12 @@ func (c *ClaudeCodeHarness) Install(opts core.InstallOpts) error {
 	}
 
 	if !opts.YesToAll {
+		stat, _ := os.Stdin.Stat()
+		if (stat.Mode() & os.ModeCharDevice) == 0 {
+			// Not a terminal, abort interactive prompt
+			return nil
+		}
+
 		fmt.Printf("Configure Claude Code integration (hooks + MCP server)? [y/N]: ")
 		var response string
 		_, _ = fmt.Scanln(&response)
