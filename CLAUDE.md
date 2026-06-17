@@ -4,7 +4,7 @@ Guidance for any agent (Claude Code, Codex, etc.) building Dossier. Read `HANDOF
 
 ## What this is
 
-Dossier (codename *chainlink*) is a local, single-user durable memory layer for agent-driven work across Claude Code, Codex, and Antigravity. A Dossier is a flat durable topic with a curated Markdown **Distilled State**, a source-retaining **Archive**, and an append-only audit log. One self-contained **Go** binary serves CLI + MCP-over-stdio + hooks + TUI. No database; files are the source of truth.
+Dossier (codename *chainlink*) is a local, single-user durable memory layer for agent-driven work in Claude Code (the only supported harness in v1). A Dossier is a flat durable topic with a curated Markdown **Distilled State**, a source-retaining **Archive**, and an append-only audit log. One self-contained **Go** binary serves CLI + MCP-over-stdio + hooks + TUI. No database; files are the source of truth.
 
 ## Reading order (do not skip)
 
@@ -41,7 +41,7 @@ Match the surrounding code's idioms once they exist. Standard Go: `gofmt`, table
 - **No global active Dossier** — binding is per session.
 - **Non-destructive always** — superseded content moves to Archive/audit, never deleted. This replaces a human confirm gate.
 - **Degrade visibly** — a missing harness capability is a surfaced warning, never a silent no-op. Don't promise transcript capture universally.
-- **Never clobber a user's harness config** — read/merge/write, back up, idempotent, per-harness confirmation (BUILD-DECISIONS B7/B8).
+- **Never clobber a user's harness config** — read/merge/write, back up, idempotent, confirmation before modifying (BUILD-DECISIONS B7/B8).
 
 ## Test expectations
 
@@ -53,4 +53,4 @@ Compiles, `go vet` + `gofmt` clean, tests pass, the relevant SPEC §14 acceptanc
 
 ## When blocked or when reality contradicts a doc
 
-The capability assumptions (Tiers, transcript access, session ids) are *assumptions* until verified against the real harness — start with Claude Code. If a harness can't do what a doc assumes, **stop and flag it**; record findings in `docs/harness-capabilities.md`. Don't silently work around a contradicted decision.
+The capability assumptions (transcript access, session ids, hooks) are *assumptions* until verified against the real Claude Code harness. If Claude Code can't do what a doc assumes, **stop and flag it**; record findings in `docs/harness-capabilities.md`. Don't silently work around a contradicted decision.

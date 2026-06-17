@@ -7,11 +7,11 @@
 
 ## Press Release
 
-**Dossier keeps your long-running agent work alive across sessions and across tools — without the bloat.**
+**Dossier keeps your long-running agent work alive across Claude Code sessions — without the bloat.**
 
 *A durable memory layer for people who run many parallel threads of work through CLI coding agents.*
 
-**SAN FRANCISCO — June 14, 2026** — Today we're introducing **Dossier**, a local, single-user memory layer that lets technically-savvy business users carry a topic of work across many agent sessions — and across different agents. v1 supports Claude Code, Codex, and Antigravity, with visible capability notices when a harness cannot provide the full hook or transcript-capture experience.
+**SAN FRANCISCO — June 14, 2026** — Today we're introducing **Dossier**, a local, single-user memory layer that lets technically-savvy business users carry a topic of work across many agent sessions. v1 supports Claude Code, with visible capability notices when a session cannot provide the full hook or transcript-capture experience.
 
 People who drive their work through coding agents hit the same wall: a serious topic doesn't finish in one session. They come back days later and the context is gone, scattered across `/resume` histories that mix throwaway chats with work that matters. Resumed sessions are bloated with false starts and small talk. And the moment they want to switch from one agent to another, the thread breaks entirely. The `handoff.md` pattern proved people *want* a durable, portable context file — but maintaining one by hand, per topic, across 20 topics a day, doesn't scale.
 
@@ -21,7 +21,7 @@ Dossier makes a topic a first-class, durable object. You promote any session int
 
 Dossier is built around three deliberate choices. **One:** the distilled critical information and the captured source archive are kept separate, so context stays focused and citable at the same time — every material claim links back to the source that justifies it. **Two:** the agent decides what's worth keeping and writes the update itself — no review step to slow you down — and because captured raw material is never deleted, any call it makes stays recoverable from the Archive. **Three:** it meets the agent where it already lives, through MCP, hooks where available, and a plain context file fallback, so unsupported capabilities degrade visibly instead of silently.
 
-v1 is local and single-user, available as a CLI/TUI and as an MCP server that Claude Code, Codex, and Antigravity can use according to their supported extension points. Sharing with colleagues, a web app, an in-app chat model, native binary attachment management, and automatic Slack/email/Drive ingestion are on the roadmap and intentionally out of v1.
+v1 is local and single-user, available as a CLI/TUI and as an MCP server that Claude Code uses through its hooks and MCP extension points. Support for other harnesses (Codex, Antigravity), sharing with colleagues, a web app, an in-app chat model, native binary attachment management, and automatic Slack/email/Drive ingestion are on the roadmap and intentionally out of v1.
 
 To get started, run `dossier init`. After that, when you open a supported agent session, the agent sees your Dossier library, tells you any capability limitations, and can help you continue an existing Dossier or promote the current conversation into a new one. CLI commands remain available when you want direct control.
 
@@ -39,7 +39,7 @@ One distinct topic of work. Its **Distilled State** is stored as a single Markdo
 `/resume` replays a whole session, mixing durable work with throwaway chatter and carrying every false path forward. Dossier carries only the curated state of a *topic*, warns against a clear token target, and works across supported agents — not just the one that created the session.
 
 **Does it work with agents other than Claude Code?**
-Yes — that's the point. v1 explicitly supports Claude Code, Codex, and Antigravity. The exact automation depends on what each harness exposes: some can support hooks and transcript capture, some may support MCP/context-file recall but not raw transcript archiving. Dossier makes those limitations visible during install and again when the Dossier library is loaded at session start.
+Not in v1. Dossier v1 targets Claude Code exclusively, because Claude Code exposes the full set of extension points Dossier relies on — hooks, MCP, and transcript capture. Other harnesses (Codex, Antigravity) reach only degraded capability levels that can't back Dossier's guarantees, so they're deferred to a later version. Even within Claude Code, if a capability is unavailable in a given session, Dossier makes that limitation visible during install and again when the Dossier library is loaded at session start.
 
 **How do I start a Dossier mid-conversation, when I realize a chat matters?**
 Ask the agent to make this conversation a Dossier. Under the hood, `dossier promote` turns the current session into a new Dossier. If it actually belongs to an existing topic, `dossier link` connects it — and Dossier suggests likely matches so you don't have to hunt. When the match is ambiguous, the agent asks which thread to use instead of silently guessing.
@@ -69,7 +69,7 @@ On your machine. Each Dossier has a directory with a plain Markdown distilled-st
 No. Dossier *stores* the material you or your agent bring to it — it doesn't fetch from external sources itself. Your agent already has its integrations; when it pulls in a Slack thread or doc, Dossier saves that as a citable snapshot. Sourcing is the agent's job; retaining and organizing it is Dossier's.
 
 **Does Dossier capture the whole agent transcript?**
-When a supported harness exposes a transcript, yes: Dossier captures it deterministically as an Archive artifact. When transcript access is unavailable, Dossier says so during installation and again when your Dossier library is shown at session start, so you know exactly what is and is not being retained.
+When Claude Code exposes a transcript, yes: Dossier captures it deterministically as an Archive artifact. When transcript access is unavailable in a session, Dossier says so during installation and again when your Dossier library is shown at session start, so you know exactly what is and is not being retained.
 
 **Can two sessions work on different Dossiers at the same time?**
 Yes. The active Dossier is per agent session, not global. Two sessions can work on two different Dossiers, even in the same harness. You can switch a session's active Dossier with `/dossier`, by asking the agent naturally, by starting a new session, or after `/clear`. Clearing a session removes the Dossier from that session's context; it does not delete the Dossier.

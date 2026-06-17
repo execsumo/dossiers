@@ -13,7 +13,7 @@ These are settled. They are placed up front because they constrain everything do
 |---|----------|-----------|-------------------|
 | **D1** | A **flat set of distinct Dossiers**. Artifacts belong to a Dossier. No topic graph/tree/cross-links. | A topic is self-contained; extra material is *artifacts of one topic*, not multiple topics. | Inter-topic link graph, nesting, topic hierarchies. |
 | **D2** | **Two layers** per Dossier: curated **Distilled State** + source-retaining **Archive** of captured artifacts. Provenance links connect distilled claims → source artifacts. | The Distilled State holds *all critical information with noise removed* — not a short summary; "be citable" and "carry the full substance of the topic" can't both live in the raw transcript. | A single evolving doc; lossy summaries that discard substance or sources. |
-| **D3** | Access via **MCP** (auto-surfaces available Dossiers on agent load) **+ CLI/TUI**. **Local, single-user.** v1 explicitly supports Claude Code, Codex, and Antigravity, with capability tiers per harness (§5.5). | Meet the agent where it lives; degrade gracefully. | Cloud dependency, web app, account system (v1). |
+| **D3** | Access via **MCP** (auto-surfaces available Dossiers on agent load) **+ CLI/TUI**. **Local, single-user.** v1 supports **Claude Code only** (§5.5). | Meet the agent where it lives; degrade gracefully. | Cloud dependency, web app, account system (v1); other harnesses (Codex, Antigravity). |
 | **D4** | Distillation runs **without a human gate**, but it is **governed, not ad hoc**. *What* to retain is steered by a shipped **Distillation Guide** (a skill/instructions the agent loads). *When* to write is **deterministic** — hook-driven cadence + triggers (§4.11), never "the agent remembers to." | A confirm step adds friction; but "agent freely decides whether and what to write" is too loose. Steer content quality up front, enforce update cadence mechanically. Trust on content comes from **non-destruction** + the guide, not a gate. | A blocking human-confirm; relying on the agent's discretion to update. |
 | **D5** | Relatedness is resolved by **merge**, producing **one converged Distilled State**; **conflicts and ambiguous targets are surfaced to the human**. | Matches D1 (no persistent links); keeps one source of truth per topic. | Auto-merge that silently reconciles; permanent dossier-to-dossier references. |
 | **D6** | Dossier **stores** artifact content provided by the agent/user; it does **not fetch from external sources itself**. The agent (assumed to have its own integrations) fetches **on request**; snapshots are **refreshed while active** and **frozen on resolution**. | Sourcing is the agent's/user's job, not this app's. Accuracy during active work; stable citation after. | The app owning source integrations; live links only (rot); a snapshot that goes stale mid-thread. |
@@ -29,7 +29,7 @@ These are settled. They are placed up front because they constrain everything do
 
 Technically-savvy business users drive many topics through CLI coding agents. Serious topics span days and multiple sessions; `/resume` mixes durable work with throwaway chatter, bloats context with dead ends, and breaks entirely when switching agents. The `handoff.md` pattern shows the demand for durable, portable context — but hand-maintaining one file per topic across ~20 topics/day doesn't scale.
 
-**Objective:** Let a user carry a topic across sessions and across agents, resuming with the *distilled, citable state of the work* under a clear token target, with the raw material retained and one search away.
+**Objective:** Let a user carry a topic across Claude Code sessions, resuming with the *distilled, citable state of the work* under a clear token target, with the raw material retained and one search away.
 
 **Non-goals (v1):** collaboration, hosted UI, in-app chat, automatic content ingestion, native binary attachment management.
 
@@ -211,15 +211,13 @@ Some behavior must not depend on the agent choosing to act; hooks make it determ
 
 Hooks ship as part of `dossier init` (it installs/updates the harness hook config). The MCP tools remain available for explicit, on-demand use; the hooks provide the *guarantee*.
 
-### 5.5 v1 harness support tiers
+### 5.5 v1 harness support
 
-v1 supports Claude Code, Codex, and Antigravity, but capabilities may differ by harness.
+v1 supports **Claude Code only.** Claude Code provides the full capability set: hooks + MCP + transcript capture — full deterministic surfacing, deterministic save backstops, MCP tools, and transcript archive capture.
 
-- **Tier 1: hooks + MCP + transcript capture.** Full deterministic surfacing, deterministic save backstops, MCP tools, and transcript archive capture.
-- **Tier 2: hooks + MCP, no transcript capture.** Full surfacing/save guarantees, but raw transcript Archive is unavailable; Dossier must warn at install and session start.
-- **Tier 3: MCP/context file only.** Dossier works for recall, save, search, and manual/agent-initiated workflows, but deterministic session-start/session-end guarantees are unavailable; Dossier must warn at install and session start.
+Other harnesses (e.g. Codex, Antigravity) reach only degraded capability levels — missing transcript capture or deterministic session-start/session-end hooks — which are insufficient for Dossier's guarantees. They are out of scope for v1.
 
-The SPEC should map Claude Code, Codex, and Antigravity to these tiers based on their actual extension points. Product behavior must degrade visibly, never silently.
+Even within Claude Code, if an expected capability is unavailable in a given session (e.g. transcript access), product behavior must degrade visibly, never silently — Dossier warns at install and session start.
 
 ---
 
@@ -242,19 +240,19 @@ The token target governs the **Distilled State context loaded on recall**. The d
 - **Inspectable & recoverable:** plain Markdown files are the source of truth; readable/editable in any Markdown reader (e.g. Obsidian) with no special tool and no database (D9).
 - **Non-destructive:** no flow deletes source material; supersession is via Archive + audit log. This is the primary trust mechanism in place of a distillation confirm gate (D4).
 - **Auditable:** every write, ambiguity confirmation, merge, archive, and freeze recorded in `audit.log` — also the provenance backbone.
-- **Cross-agent:** v1 supports Claude Code, Codex, and Antigravity with visible capability tiers; all supported harnesses can recall/save/search, while hook and transcript guarantees depend on harness support (§5.5).
+- **Harness:** v1 supports Claude Code only (§5.5). Recall/save/search, hooks, and transcript capture are all available; if a capability is missing in a given session, Dossier warns rather than silently degrading.
 - **Concurrency (light, v1):** single user but multiple agent sessions may touch one Dossier. Recommended v1 behavior: optimistic concurrency with a base revision/hash recorded when a session recalls or switches to a Dossier. On save, if the on-disk revision changed, do not blindly overwrite; create a conflict artifact/draft, surface the conflict to the agent/user, and require reconciliation. If only non-overlapping frontmatter changed, auto-merge and audit it. Last-write-wins is acceptable only for append-only audit entries and new artifacts.
 
 ---
 
 ## 8. Success metrics
 
-1. **Cross-agent resume:** user resumes a real topic in a *different* v1 agent than created it and reaches productive work without re-explaining context — repeatedly, across days. Target: at least 8 of 10 dogfood attempts succeed without manual context paste beyond choosing the Dossier.
+1. **Cross-session resume:** user resumes a real topic in a *different* Claude Code session than created it and reaches productive work without re-explaining context — repeatedly, across days. Target: at least 8 of 10 dogfood attempts succeed without manual context paste beyond choosing the Dossier.
 2. **Token target visibility:** Distilled State recall reports token estimate and warns above the configured target. Target: no silent over-target recalls; no silent truncation.
 3. **Trust without a gate:** near-zero "it summarized away something I needed and I couldn't get it back" incidents (captured source is recoverable from Archive); after-the-fact edits to Distilled State are rare and minor. Target: every material claim in sampled Dossiers has provenance.
 4. **Capture friction:** promote/link/switch each complete in one command/tool call, allowing at most one inline disambiguation step for ambiguous targets.
 5. **Open-work clarity:** user can answer "what topic needs me next?" from one view. Target: library/open-work list renders in under 2 seconds for 500 Dossiers on a typical laptop.
-6. **Install transparency:** install output and session-start notices clearly identify each configured harness's tier and transcript-capture availability.
+6. **Install transparency:** install output and session-start notices clearly identify the configured Claude Code integration and its capability (MCP, hooks, transcript-capture) availability.
 
 ---
 

@@ -33,8 +33,7 @@ This is ports-and-adapters (hexagonal). It buys us the property the SPEC implici
         └────┬─────┴────┬───┴─────┬────┴────┬─────┴────┬────┘
              │          │         │         │          │
         driven adapters (implement ports)
-        fsstore     rg/native   bpe       claudecode/   wall
-                                          codex/antigravity
+        fsstore     rg/native   bpe       claudecode    wall
 ```
 
 Core depends on **nothing** outside the standard library and its own port interfaces. Everything else depends on core. This makes the domain testable in isolation and lets us swap search backends, tokenizers, and harnesses without touching logic.
@@ -71,10 +70,8 @@ dossier/
     tokenizer/           # driven adapter (implements core.Tokenizer)
       bpe.go             # embedded vocab; estimate()
     harness/             # driven adapters (implement core.HarnessRegistry / Harness)
-      harness.go         # Harness interface, Capabilities, Tier
-      claudecode.go      # FIRST target (B2)
-      codex.go
-      antigravity.go
+      harness.go         # Registry + shared hook-merge helpers
+      claudecode.go      # the only supported harness in v1 (B2)
     config/              # config.yaml load/save/defaults
     hooks/               # hook PAYLOAD builders + session-start/end handlers (call core)
     cli/                 # cobra commands → core.Service → render (text/--json)
@@ -151,7 +148,7 @@ type Tokenizer interface {
 
 type Harness interface {
     Name() string
-    Detect() (Capabilities, error)   // reads harness config, returns booleans + tier
+    Detect() (Capabilities, error)   // reads harness config, returns capability booleans
     Install(InstallOpts) error        // idempotent, non-clobbering, backs up (B7/B8)
 }
 type HarnessRegistry interface{ All() []Harness }
@@ -253,9 +250,9 @@ All three construct the Service identically via a small `wire()` that picks adap
 
 ## 8. Harness adapters (the fragile edge)
 
-Each harness implements `Detect()` and `Install()`. `Install` is **idempotent, non-clobbering, and backs up** every file it touches (B7), and is **gated by per-harness confirmation** in `init` (B8). It registers both the lifecycle hooks and the MCP server (under name `"dossier"`) using the stable binary path passed via `InstallOpts.StableBinaryPath`. A harness may keep these in **distinct files**: for Claude Code, hooks go to `~/.claude/settings.json` while the MCP server must go to `~/.claude.json` (the only location Claude Code reads user-scope MCP servers from); Codex keeps both in `~/.codex/config.toml`. `Install` also migrates stale entries an older build wrote to the wrong file (e.g. a `dossier` MCP entry left in `settings.json`). Capability detection produces the booleans in SPEC §5.1 and a Tier (§5.5/§6.1).
+The harness implements `Detect()` and `Install()`. `Install` is **idempotent, non-clobbering, and backs up** every file it touches (B7), and is **gated by confirmation** in `init` (B8). It registers both the lifecycle hooks and the MCP server (under name `"dossier"`) using the stable binary path passed via `InstallOpts.StableBinaryPath`. Claude Code keeps these in **distinct files**: hooks go to `~/.claude/settings.json` while the MCP server must go to `~/.claude.json` (the only location Claude Code reads user-scope MCP servers from). `Install` also migrates stale entries an older build wrote to the wrong file (e.g. a `dossier` MCP entry left in `settings.json`). Capability detection produces the booleans in SPEC §5.1.
 
-Build **Claude Code first** (B2) to a real Tier-1 implementation; codify what you learn in `docs/harness-capabilities.md`; then implement Codex and Antigravity against the same interface, letting them land on Tier 2/3 honestly. The product must **degrade visibly** — a missing capability is a warning surfaced through `Result`, never a silent no-op.
+v1 supports **Claude Code only** (B2) — the one harness that provides the full capability set; what was learned validating it lives in `docs/harness-capabilities.md`. The `Harness` interface and `Registry` remain so additional harnesses could be added later, but other harnesses (Codex, Antigravity) only reach degraded capability levels insufficient for Dossier's guarantees and are out of scope for v1. The product must still **degrade visibly** — a capability missing in a given Claude Code session is a warning surfaced through `Result`, never a silent no-op.
 
 ---
 
@@ -271,7 +268,7 @@ The Distillation Guide and the `library.md` template are **embedded** via `go:em
 - **store**: integration tests against a temp `DOSSIER_HOME`. Assert atomic-write durability, the 500-Dossier frontmatter scan < 2s (SPEC §14.1), append-only audit, slug collisions.
 - **Distillation Guide**: golden-file fixtures — sample transcript in, assert the distilled output's *structure and provenance presence* (not verbatim prose). This is how guide quality stays regression-safe.
 - **MCP**: drive the server over in-memory pipes; assert the §8.2 envelope and error-code mapping for each tool.
-- **harness**: fixture config dirs per harness; assert `Detect()` tiers and that `Install()` is idempotent and backs up.
+- **harness**: fixture Claude Code config dirs; assert `Detect()` capabilities and that `Install()` is idempotent and backs up.
 - **doctor**: corrupt-store fixtures (bad YAML, dangling provenance, unparseable audit, stale context) → assert each is reported.
 
 ---

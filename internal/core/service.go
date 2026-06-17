@@ -81,28 +81,21 @@ func (s *Service) Init(ctx context.Context, req InitReq) (Result, error) {
 		stablePath = "dossier"
 	}
 
-	// Detect harnesses and construct the capability tiers details
-	harnesses := s.hreg.All()
-	harnessTiers := make(map[string]string)
-	for _, h := range harnesses {
+	// Detect Claude Code and report its capabilities.
+	harnessCaps := make(map[string]bool)
+	harnessDetected := false
+	for _, h := range s.hreg.All() {
 		caps, err := h.Detect()
-		tier := "Tier 3"
-		if err == nil {
-			if caps.SessionStartHook && caps.SessionEndHook && caps.TranscriptCapture {
-				tier = "Tier 1"
-			} else if caps.SessionStartHook && caps.SessionEndHook {
-				tier = "Tier 2"
-			}
+		if err == nil && (caps.MCP || caps.SessionStartHook || caps.SessionEndHook || caps.PreCompactionHook || caps.TranscriptCapture) {
+			harnessDetected = true
 		}
-		harnessTiers[h.Name()] = tier
-		if h.Name() == "codex" && !caps.TranscriptCapture {
-			warnings = append(warnings, Warning("Codex transcript archive unavailable. Dossier will say this at session start."))
-		}
-		if h.Name() == "antigravity" {
-			warnings = append(warnings, Warning(fmt.Sprintf("Antigravity MCP auto-registration is not supported. Please configure the MCP server manually: command=%s, args=[mcp, serve]", stablePath)))
-		}
+		harnessCaps["MCP"] = caps.MCP
+		harnessCaps["SessionStartHook"] = caps.SessionStartHook
+		harnessCaps["SessionEndHook"] = caps.SessionEndHook
+		harnessCaps["PreCompactionHook"] = caps.PreCompactionHook
+		harnessCaps["TranscriptCapture"] = caps.TranscriptCapture
 
-		// Install the hook and MCP if supported
+		// Install the hooks and MCP server if supported.
 		if err == nil && (caps.SessionStartHook || caps.SessionEndHook || caps.MCP) {
 			installErr := h.Install(InstallOpts{
 				Interactive:      !req.YesToAll,
@@ -114,13 +107,24 @@ func (s *Service) Init(ctx context.Context, req InitReq) (Result, error) {
 			}
 		}
 	}
-	data["harness_tiers"] = harnessTiers
+	data["harness_detected"] = harnessDetected
+	data["harness_capabilities"] = harnessCaps
 
 	return Result{
 		OK:       true,
 		Data:     data,
 		Warnings: warnings,
 	}, nil
+}
+
+// displayHarnessName maps a harness identifier to its human-readable label.
+func displayHarnessName(name string) string {
+	switch name {
+	case "claude-code":
+		return "Claude Code"
+	default:
+		return name
+	}
 }
 
 // Doctor validates store integrity and configuration correctness.
@@ -980,15 +984,7 @@ func (s *Service) ContextRefresh(ctx context.Context) (Result, error) {
 	var warnings []string
 
 	if activeHarness != nil {
-		harnessName = activeHarness.Name()
-		switch harnessName {
-		case "claude-code":
-			harnessName = "Claude Code"
-		case "codex":
-			harnessName = "Codex"
-		case "antigravity":
-			harnessName = "Antigravity"
-		}
+		harnessName = displayHarnessName(activeHarness.Name())
 
 		harnessCaps["MCP"] = activeCaps.MCP
 		harnessCaps["SessionStartHook"] = activeCaps.SessionStartHook
@@ -996,7 +992,7 @@ func (s *Service) ContextRefresh(ctx context.Context) (Result, error) {
 		harnessCaps["PreCompactionHook"] = activeCaps.PreCompactionHook
 		harnessCaps["TranscriptCapture"] = activeCaps.TranscriptCapture
 
-		if harnessName == "Codex" && !activeCaps.TranscriptCapture {
+		if !activeCaps.TranscriptCapture {
 			warnings = append(warnings, "Transcript archive is unavailable in this session.")
 		}
 	} else {
@@ -1240,15 +1236,7 @@ func (s *Service) SessionStart(ctx context.Context, sessionID string) (string, e
 
 	harnessName := "CLI"
 	if activeHarness != nil {
-		harnessName = activeHarness.Name()
-		switch harnessName {
-		case "claude-code":
-			harnessName = "Claude Code"
-		case "codex":
-			harnessName = "Codex"
-		case "antigravity":
-			harnessName = "Antigravity"
-		}
+		harnessName = displayHarnessName(activeHarness.Name())
 	}
 
 	mcpAvail := "unavailable"
@@ -1283,7 +1271,7 @@ func (s *Service) SessionStart(ctx context.Context, sessionID string) (string, e
 	sb.WriteString(fmt.Sprintf("- Pre-compaction save hook: %s\n", compactionAvail))
 	sb.WriteString(fmt.Sprintf("- Transcript capture: %s\n\n", transcriptAvail))
 
-	if harnessName == "Codex" && !activeCaps.TranscriptCapture {
+	if activeHarness != nil && !activeCaps.TranscriptCapture {
 		sb.WriteString("Warning: Transcript archive is unavailable in this session.\n\n")
 	}
 
