@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bufio"
 	"bytes"
 	"dossier/assets"
 	"dossier/internal/core"
@@ -426,12 +427,7 @@ func (s *FSStore) listArtifactsInternal(dossierID string, dossierDir string) ([]
 			continue
 		}
 
-		data, err := os.ReadFile(filepath.Join(artifactsDir, entry.Name()))
-		if err != nil {
-			continue
-		}
-
-		art, err := parseArtifactFile(string(data))
+		art, err := parseArtifactFrontmatterOnly(filepath.Join(artifactsDir, entry.Name()))
 		if err != nil {
 			continue
 		}
@@ -681,6 +677,43 @@ func parseArtifactFile(content string) (*core.Artifact, error) {
 		return nil, err
 	}
 	art.Content = strings.TrimPrefix(parts[2], "\n")
+	return &art, nil
+}
+
+func parseArtifactFrontmatterOnly(filePath string) (*core.Artifact, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	var fmLines []string
+	dashCount := 0
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "---") {
+			dashCount++
+			if dashCount == 2 {
+				break
+			}
+			continue
+		}
+		if dashCount == 1 {
+			fmLines = append(fmLines, line)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	if dashCount < 2 {
+		return nil, fmt.Errorf("missing artifact frontmatter delimiters")
+	}
+
+	var art core.Artifact
+	if err := yaml.Unmarshal([]byte(strings.Join(fmLines, "\n")), &art); err != nil {
+		return nil, err
+	}
 	return &art, nil
 }
 

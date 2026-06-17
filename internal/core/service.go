@@ -279,6 +279,10 @@ func GenerateUnifiedDiff(a, b string) string {
 	n := len(aLines)
 	m := len(bLines)
 
+	if n*m > 10000000 {
+		return fmt.Sprintf("--- Diff too large to compute for files of %d and %d lines ---\n\n(See Rejected Proposal for the attempted body)", n, m)
+	}
+
 	dp := make([][]int, n+1)
 	for i := range dp {
 		dp[i] = make([]int, m+1)
