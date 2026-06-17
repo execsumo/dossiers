@@ -656,16 +656,25 @@ func (s *FSStore) findDossierDir(slugOrID string) (string, error) {
 // Public Parsing helpers exported for store integration tests
 
 func ParseDossierFile(content string) (*core.Frontmatter, string, error) {
-	parts := strings.SplitN(content, "---", 3)
-	if len(parts) < 3 {
-		return nil, "", fmt.Errorf("missing frontmatter delimiters")
+	startIdx := strings.Index(content, "---")
+	if startIdx == -1 {
+		return nil, "", fmt.Errorf("missing starting frontmatter delimiter")
 	}
 
+	endIdx := strings.Index(content[startIdx+3:], "---")
+	if endIdx == -1 {
+		return nil, "", fmt.Errorf("missing ending frontmatter delimiter")
+	}
+	endIdx += startIdx + 3
+
+	yamlContent := content[startIdx+3 : endIdx]
+	body := content[endIdx+3:]
+
 	var fm core.Frontmatter
-	if err := yaml.Unmarshal([]byte(parts[1]), &fm); err != nil {
+	if err := yaml.Unmarshal([]byte(yamlContent), &fm); err != nil {
 		return nil, "", err
 	}
-	return &fm, strings.TrimPrefix(parts[2], "\n"), nil
+	return &fm, strings.TrimPrefix(body, "\n"), nil
 }
 
 func FormatDossierFile(fm core.Frontmatter, body string) (string, error) {
@@ -677,16 +686,25 @@ func FormatDossierFile(fm core.Frontmatter, body string) (string, error) {
 }
 
 func parseArtifactFile(content string) (*core.Artifact, error) {
-	parts := strings.SplitN(content, "---", 3)
-	if len(parts) < 3 {
-		return nil, fmt.Errorf("missing artifact frontmatter delimiters")
+	startIdx := strings.Index(content, "---")
+	if startIdx == -1 {
+		return nil, fmt.Errorf("missing starting artifact frontmatter delimiter")
 	}
 
+	endIdx := strings.Index(content[startIdx+3:], "---")
+	if endIdx == -1 {
+		return nil, fmt.Errorf("missing ending artifact frontmatter delimiter")
+	}
+	endIdx += startIdx + 3
+
+	yamlContent := content[startIdx+3 : endIdx]
+	body := content[endIdx+3:]
+
 	var art core.Artifact
-	if err := yaml.Unmarshal([]byte(parts[1]), &art); err != nil {
+	if err := yaml.Unmarshal([]byte(yamlContent), &art); err != nil {
 		return nil, err
 	}
-	art.Content = strings.TrimPrefix(parts[2], "\n")
+	art.Content = strings.TrimPrefix(body, "\n")
 	return &art, nil
 }
 
@@ -753,17 +771,25 @@ func formatConflictFile(c *core.Conflict) (string, error) {
 }
 
 func parseConflictFile(content string) (*core.Conflict, error) {
-	parts := strings.SplitN(content, "---", 3)
-	if len(parts) < 3 {
-		return nil, fmt.Errorf("missing conflict delimiters")
+	startIdx := strings.Index(content, "---")
+	if startIdx == -1 {
+		return nil, fmt.Errorf("missing starting conflict delimiter")
 	}
 
+	endIdx := strings.Index(content[startIdx+3:], "---")
+	if endIdx == -1 {
+		return nil, fmt.Errorf("missing ending conflict delimiter")
+	}
+	endIdx += startIdx + 3
+
+	yamlContent := content[startIdx+3 : endIdx]
+	body := content[endIdx+3:]
+
 	var c core.Conflict
-	if err := yaml.Unmarshal([]byte(parts[1]), &c); err != nil {
+	if err := yaml.Unmarshal([]byte(yamlContent), &c); err != nil {
 		return nil, err
 	}
 
-	body := parts[2]
 	subparts := strings.Split(body, "## Diff against current")
 	if len(subparts) > 1 {
 		c.DiffAgainstCurrent = strings.TrimSpace(subparts[1])
