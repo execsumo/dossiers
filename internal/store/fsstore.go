@@ -96,6 +96,10 @@ func (s *FSStore) List(statusFilter string) ([]core.Frontmatter, error) {
 			continue
 		}
 
+		if statusFilter != "all" && !bytes.Contains(data, []byte("status: "+statusFilter)) {
+			continue
+		}
+
 		fm, _, err := ParseDossierFile(string(data))
 		if err != nil {
 			continue
@@ -627,6 +631,10 @@ func (s *FSStore) findDossierDir(slugOrID string) (string, error) {
 		dossierPath := filepath.Join(dirPath, "dossier.md")
 		data, err := os.ReadFile(dossierPath)
 		if err != nil {
+			continue
+		}
+
+		if !bytes.Contains(data, []byte("id: "+slugOrID)) && !bytes.Contains(data, []byte("slug: "+slugOrID)) {
 			continue
 		}
 
