@@ -971,13 +971,11 @@ func resolveHomeDir() string {
 }
 
 func resolveSessionID() string {
-	if sessionFlag != "" {
-		return sessionFlag
-	}
-	if envSess := os.Getenv("DOSSIER_SESSION"); envSess != "" {
-		return envSess
-	}
-	return "sess_default"
+	// allowDefault: the CLI is also used for manual, non-session invocations, so it
+	// falls back to the shared bucket. Precedence (flag > CLAUDE_CODE_SESSION_ID >
+	// DOSSIER_SESSION > default) lives in harness.ResolveSessionID so CLI and MCP agree.
+	sid, _ := harness.ResolveSessionID(sessionFlag, true)
+	return sid
 }
 
 func printJSON(data any) {
