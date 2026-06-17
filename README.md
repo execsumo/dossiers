@@ -8,13 +8,26 @@ No database, no cloud, no account. Your data is plain Markdown under `~/.dossier
 
 ## Quickstart
 
-Requires **Go 1.26+** and **Claude Code**, on macOS or Linux. (No prebuilt binary yet — you build from source.)
+Requires **Claude Code** on macOS or Linux.
+
+**Option A — prebuilt binary (recommended)**
+
+Download the latest release for your platform from the [Releases page](https://github.com/execsumo/dossiers/releases), make it executable, and run `init`:
+
+```bash
+# example for macOS Apple Silicon
+curl -L https://github.com/execsumo/dossiers/releases/latest/download/dossier-darwin-arm64 -o dossier
+chmod +x dossier
+./dossier init        # installs to a stable PATH, then wires up Claude Code
+```
+
+**Option B — build from source** (requires Go 1.26+)
 
 ```bash
 git clone https://github.com/execsumo/dossiers.git
 cd dossiers
 go build ./cmd/dossier
-./dossier init        # installs to a stable PATH, then wires up Claude Code
+./dossier init
 ```
 
 That single `init` does everything:
