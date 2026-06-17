@@ -17,6 +17,7 @@ Other harnesses (Codex, Antigravity) were evaluated but reach only degraded capa
 | **Pre-Compaction Hook** | Yes (`PreCompact`) |
 | **Raw Transcript Access** | Yes (via session UUID matching) |
 | **Stable Session ID** | Yes (UUID string in payload) |
+| **MCP Session Env Var** | Yes (`CLAUDE_CODE_SESSION_ID`, verified) |
 | **Context Injection** | Yes (Stdout from `SessionStart` hook) |
 | **Install/Notice Surfacing** | Yes (During init & session start) |
 
@@ -28,7 +29,19 @@ All capabilities are available, so Claude Code supports Dossier's full determini
 
 - **MCP Path:** Stdio-based server registered globally in `~/.claude.json` under `"mcpServers"` or locally in a project's `.mcp.json`.
 - **Hooks:** Lifecycle hooks trigger commands. The standard output of the `SessionStart` hook is directly injected into Claude Code's active context window. The `PreCompact` hook triggers just before history truncation, enabling a final `Save` of the session's active Dossier context.
-- **Session ID:** A stable UUID is passed in the JSON payload on `stdin` to any hook handler.
+- **Session ID:** A stable UUID is passed in the JSON payload on `stdin` to any hook handler. (Note: Previously, this session ID was only available to hooks and was not automatically resolved by MCP adapters; the addition of env-var resolution closes this gap).
+
+### MCP Session Identity
+
+The stdio MCP server (`dossier mcp serve`) is launched per session with `CLAUDE_CODE_SESSION_ID` set in its environment. This UUID is identical to:
+- The session ID in the hook stdin JSON payload,
+- The transcript filename (e.g., `~/.claude/projects/.../<uuid>.jsonl`),
+- The `~/.claude/session-env/<uuid>` entry.
+
+Therefore, an MCP tool can resolve the active session ID directly from the environment without the agent supplying it.
+
+#### Observed Quirks
+A single Claude Code session may spawn two concurrent `dossier mcp serve` processes. Both processes carry the identical `CLAUDE_CODE_SESSION_ID` in their environment, so reading the environment variable remains unambiguous and safe.
 
 ---
 

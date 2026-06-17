@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"dossier/internal/core"
+	"dossier/internal/harness"
 	"encoding/json"
 	"fmt"
 )
@@ -172,22 +173,22 @@ func getToolDefinitions() []ToolDefinition {
 		},
 		{
 			Name:        "dossier_active",
-			Description: "Retrieve the active dossier binding for a session",
+			Description: "Show which dossier is bound to the current session. The session is resolved automatically from the harness; do not pass session_id unless overriding it.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"session_id": map[string]any{"type": "string"},
+					"session_id": map[string]any{"type": "string", "description": "Optional override; normally omit. Defaults to the current Claude Code session."},
 				},
 			},
 		},
 		{
 			Name:        "dossier_switch",
-			Description: "Switch the active dossier binding for a session",
+			Description: "Bind the current session to a dossier (by slug or id) so session-start/end and pre-compaction save to it. The session is resolved automatically from the harness; pass only id.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"id":         map[string]any{"type": "string"},
-					"session_id": map[string]any{"type": "string"},
+					"id":         map[string]any{"type": "string", "description": "Dossier slug or id to make active."},
+					"session_id": map[string]any{"type": "string", "description": "Optional override; normally omit. Defaults to the current Claude Code session."},
 				},
 				"required": []string{"id"},
 			},
@@ -396,7 +397,14 @@ func (s *Server) handleToolCall(ctx context.Context, id any, name string, args j
 			SessionID string `json:"session_id"`
 		}
 		_ = json.Unmarshal(args, &params)
-		res, err = s.svc.Active(ctx, core.ActiveReq{SessionID: params.SessionID})
+		// Resolve the session id from the param or the harness env (CLAUDE_CODE_SESSION_ID).
+		// MCP must not fall back to the shared bucket, so degrade visibly if unresolved.
+		sid, serr := harness.ResolveSessionID(params.SessionID, false)
+		if serr != nil {
+			err = core.NewError(core.ErrHarnessCapabilityUnavailable, serr.Error())
+		} else {
+			res, err = s.svc.Active(ctx, core.ActiveReq{SessionID: sid})
+		}
 
 	case "dossier_switch":
 		var params struct {
@@ -407,7 +415,12 @@ func (s *Server) handleToolCall(ctx context.Context, id any, name string, args j
 			s.sendError(id, -32602, "Invalid params", nil)
 			return
 		}
-		res, err = s.svc.Switch(ctx, core.SwitchReq{ID: params.ID, SessionID: params.SessionID})
+		sid, serr := harness.ResolveSessionID(params.SessionID, false)
+		if serr != nil {
+			err = core.NewError(core.ErrHarnessCapabilityUnavailable, serr.Error())
+		} else {
+			res, err = s.svc.Switch(ctx, core.SwitchReq{ID: params.ID, SessionID: sid})
+		}
 
 	case "dossier_path":
 		var params struct {

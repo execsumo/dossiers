@@ -64,7 +64,50 @@ A full-screen Bubble Tea app. Build in this order so the tree always compiles an
 
 ## Open question to resolve (decide + document, don't guess silently)
 
-- **Session identity for an interactive local TUI.** CLI uses `resolveSessionID()` → `sess_default` by default. Decide whether the TUI should: (a) reuse `DOSSIER_SESSION`/`sess_default` like the CLI (simplest, consistent — recommended), or (b) mint a per-launch session id. Pick (a) for v1 unless you find a concrete reason; record the choice in a one-line ADR (`docs/adr/NNNN-tui-session-id.md`) per HANDOFF's ADR rule.
+- **Session identity for an interactive local TUI.** CLI uses `resolveSessionID()` → `sess_default` by default. Decide whether the TUI should: (a) reuse `DOSSIER_SESSION`/`sess_default` like the CLI (simplest, consistent — recommended), or (b) mint a per-launch session id. Pick (a) for v1 unless you find a concrete reason; record the choice in a one-line ADR (`docs/adr/NNNN-tui-session-id.md`) per HANDOFF's ADR rule. **Resolved:** option (a) — see ADR 0002, now updated by ADR 0003 (the shared resolver adds `CLAUDE_CODE_SESSION_ID` ahead of `DOSSIER_SESSION`).
+
+---
+
+## Catch-up after the MCP session-id fix (2026-06-16, ADR 0003) — TODO
+
+> Context: the MCP `dossier_switch`/`dossier_active` gap was fixed by `harness.ResolveSessionID`
+> (precedence `explicit → CLAUDE_CODE_SESSION_ID → DOSSIER_SESSION → sess_default`). The TUI
+> takes its `sessionID` from `cli.resolveSessionID()`, which now routes through that resolver, so
+> the TUI **already** resolves `CLAUDE_CODE_SESSION_ID` automatically — no change is needed for
+> *resolution*. What is stale is the TUI's session/active **presentation and honesty**, plus tests.
+> These are follow-ups; nothing agent-facing depends on them.
+
+**Dependency rule still binds:** the TUI must NOT import `harness`/`config`. All session resolution
+stays in `cli`; pass results into `tui.Run`. Items 1–2 below require `cli` to compute and hand the
+TUI a little more than the bare session id.
+
+1. **Honest session-header display.** Today the header always prints `Session: <id>`, which in
+   standalone use is the noise string `sess_default`. Have `cli` pass `tui.Run` both the resolved
+   session id **and** whether it came from a real harness source (`CLAUDE_CODE_SESSION_ID`/
+   `DOSSIER_SESSION`/`--session`) vs the `sess_default` fallback. The TUI then renders the
+   `Session:` line only for a real session; for the default bucket, hide it or label it
+   `(local default — no active Claude session)`.
+
+2. **Make `active` honest in standalone mode (degrade visibly).** The `a` action and the `★`
+   marker still work on `sess_default`, but that binding only affects the local default bucket, not
+   any live Claude session — exactly the original "why does this do nothing for me?" confusion. When
+   on the default bucket, surface a one-line footer note saying so (consistent with the hard rule
+   "degrade visibly"). When a real session id is present, `active` genuinely controls that session —
+   no note needed.
+
+3. **Document the intentional MCP-vs-TUI degrade divergence — do not "fix" it.** MCP calls
+   `ResolveSessionID(allowDefault=false)` and errors when no session resolves; the CLI/TUI call it
+   with `allowDefault=true` and fall back to `sess_default` (an interactive default is acceptable
+   and expected for a local tool). This asymmetry is deliberate. A future dev must not make the TUI
+   error like MCP. (Recorded here and in ADR 0003.)
+
+4. **Tests.** Add a TUI model test asserting header rendering for the two inputs — a real session id
+   (shows `Session: <uuid>`, no footer note) vs the default fallback (session line hidden/labelled,
+   footer note shown). Drive it headlessly like the existing TUI tests.
+
+**Out of scope for catch-up** (separate, optional UX ideas, not required by the fix): making `active`
+do something *locally* useful (e.g. default the link/merge target to it). Decide separately if ever
+desired; not part of getting the TUI "caught up."
 
 ## Hard rules to honor (from CLAUDE.md — non-negotiable)
 

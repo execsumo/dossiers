@@ -242,6 +242,8 @@ ts: 2026-06-14T16:10:00-07:00
 
 All three construct the Service identically via a small `wire()` that picks adapters (native vs ripgrep search, real vs fake store) — keep composition in one place.
 
+**Session resolution (adapter-side, see ADR 0003).** `core` stays pure: every session-scoped method takes an explicit `SessionID`. *Which* session an adapter is acting for is discovered at the edge by `harness.ResolveSessionID(explicit, allowDefault)`, with precedence `explicit param/flag → CLAUDE_CODE_SESSION_ID (set by Claude Code in each session's env) → DOSSIER_SESSION → sess_default`. The MCP adapter calls it with `allowDefault=false` and **degrades visibly** (`harness_capability_unavailable`) rather than silently sharing the `sess_default` bucket across concurrent sessions; the CLI (and TUI via `cli.resolveSessionID`) call it with `allowDefault=true` for manual use. This is the bridge that lets an in-session agent call `dossier_switch` with only a slug.
+
 **MCP**: use the official Go MCP SDK over stdio. Each `dossier_*` tool (SPEC §8.1) is a ~10-line handler: parse input → call one Service method → marshal `Result` into the §8.2 envelope. Map typed errors → §8.2 codes in **one** place (`mcp/errors.go`).
 
 **Hooks** (SPEC §9): `session-start` builds the library payload (frontmatter scan + capability warnings + guide pointer + active Dossier's distilled state if bound). `session-end`/`pre-compaction` force a `Save` of the active binding. Hook handlers call core; they don't reimplement save.

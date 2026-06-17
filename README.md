@@ -32,7 +32,7 @@ It's idempotent and non-clobbering: your existing MCP servers and hooks are pres
 Once `init` has run, Dossier works on its own:
 
 - **At session start**, your open Dossiers are surfaced into the conversation, sorted by priority — so you and the agent can pick up where you left off.
-- **During the session**, the agent recalls, saves, searches, and promotes Dossiers through MCP tools — nothing for you to remember.
+- **During the session**, the agent recalls, saves, searches, promotes, and switches Dossiers through MCP tools — nothing for you to remember. Switching binds *this* session (the MCP server resolves your Claude Code session automatically), so concurrent sessions can each follow a different Dossier without stepping on each other.
 - **At session end and before compaction**, hooks save the active Dossier so context isn't lost.
 
 A shipped **Distillation Guide** tells the agent *what* to keep; the hooks decide *when* to save. There's no confirmation gate — trust comes from the fact that nothing is ever deleted (superseded content moves to the Archive and audit log) and every claim carries a source link.
