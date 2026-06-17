@@ -265,7 +265,9 @@ func (s *FSStore) Write(d *core.Dossier, base core.Revision) (core.Revision, err
 		// Save current state to history/<revision>.md before overwriting
 		historyDir := filepath.Join(dossierDir, "history")
 		historyPath := filepath.Join(historyDir, fmt.Sprintf("%s.md", currentRevision))
-		_ = os.WriteFile(historyPath, data, 0644)
+		if err := os.WriteFile(historyPath, data, 0644); err != nil {
+			return "", fmt.Errorf("failed to save history archive: %w", err)
+		}
 	}
 
 	// Update dates
