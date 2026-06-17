@@ -271,7 +271,7 @@ func (s *FSStore) Write(d *core.Dossier, base core.Revision) (core.Revision, err
 	}
 
 	// Update dates
-	d.Frontmatter.UpdatedAt = time.Now()
+	d.Frontmatter.UpdatedAt = time.Now().Truncate(time.Second)
 	if d.Frontmatter.CreatedAt.IsZero() {
 		d.Frontmatter.CreatedAt = d.Frontmatter.UpdatedAt
 	}

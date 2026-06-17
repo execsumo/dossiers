@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Config holds the service-level configurations used by the core logic.
@@ -623,7 +624,7 @@ func (s *Service) Link(ctx context.Context, req LinkReq) (Result, error) {
 		return Result{}, err
 	}
 
-	d.Frontmatter.LastTouchedAt = now
+	d.Frontmatter.LastTouchedAt = now.UTC().Truncate(time.Second)
 	newRev, err := s.store.Write(d, baseRev)
 	if err != nil {
 		return Result{}, err

@@ -3,18 +3,40 @@ package core
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 )
 
-// CanonicalFrontmatter serializes a Frontmatter struct into a deterministic format.
-// It uses json.Marshal to automatically include all fields without manual updates.
+// CanonicalFrontmatter serializes a Frontmatter struct into a deterministic, ordered key-value format.
 func CanonicalFrontmatter(fm Frontmatter) string {
-	b, _ := json.Marshal(fm)
-	return string(b)
+	var sb strings.Builder
+	// Fields are ordered alphabetically to ensure absolute determinism.
+	sb.WriteString(fmt.Sprintf("created_at: %s\n", fm.CreatedAt.UTC().Format(time.RFC3339)))
+	if fm.DueDate != "" {
+		sb.WriteString(fmt.Sprintf("due_date: %s\n", fm.DueDate))
+	}
+	sb.WriteString(fmt.Sprintf("id: %s\n", fm.ID))
+	sb.WriteString(fmt.Sprintf("importance: %s\n", fm.Importance))
+	sb.WriteString(fmt.Sprintf("last_touched_at: %s\n", fm.LastTouchedAt.UTC().Format(time.RFC3339)))
+	sb.WriteString(fmt.Sprintf("name: %s\n", fm.Name))
+	sb.WriteString(fmt.Sprintf("next_action: %s\n", fm.NextAction))
+
+	sb.WriteString("open_questions:\n")
+	// Questions are kept in declared order
+	for _, q := range fm.OpenQuestions {
+		sb.WriteString(fmt.Sprintf("  - %s\n", q))
+	}
+
+	sb.WriteString(fmt.Sprintf("slug: %s\n", fm.Slug))
+	sb.WriteString(fmt.Sprintf("status: %s\n", fm.Status))
+	if fm.TokenTarget > 0 {
+		sb.WriteString(fmt.Sprintf("token_target: %d\n", fm.TokenTarget))
+	}
+	sb.WriteString(fmt.Sprintf("updated_at: %s\n", fm.UpdatedAt.UTC().Format(time.RFC3339)))
+	sb.WriteString(fmt.Sprintf("urgency: %s\n", fm.Urgency))
+	return sb.String()
 }
 
 // NormalizeNewlines converts CRLF to LF, trims trailing whitespace on each line, and ensures a single trailing LF.
