@@ -16,15 +16,15 @@ Precedence when docs disagree: `BUILD-DECISIONS.md` > `SPEC.md` (mechanics) > `P
 
 ## Current state
 
-> **Stage: Milestone 8 completed (Project Finished) with Hook Hotfix & Stable Install Path + Auto-MCP Configuration.** The entire Dossier durable memory layer (codename *chainlink*) is fully implemented, verified, and integrated.
+> **Stage: All Milestones Completed (Project Fully Finished).** The entire Dossier durable memory layer (codename *chainlink*) is fully implemented, verified, and integrated across all surfaces (CLI, MCP, and the Bubble Tea TUI).
 > - **Milestone 1–5:** Core file store, CLI, recall, warnings, lexical search/suggestions, promote/link flow, and the MCP stdio server are implemented.
-> - **Milestone 6:** Active session binding, hook installation for Claude Code, confirmation prompts, capability detection, and non-clobbering configurations are verified.
+> - **Milestone 6:** Active session binding, hook installation for Claude Code, confirmation prompts, capability detection, non-clobbering configurations, and the interactive **Rich TUI** (dashboard, detail recall view, switch active state, status/priority/next-action inline editing, ambiguity link resolution, and scrollable merge conflict resolving) are fully completed.
 > - **Milestone 7:** Optimistic concurrency control, non-overlapping frontmatter auto-merging, DP LCS unified diff body conflict generation (writing to `conflicts/`), and `dossier merge` CLI/Service commands are verified.
 > - **Milestone 8:** The final Distillation Guide is authored in `assets/guide.md` and embedded in the binary to be written to `~/.dossier/context/guide.md` upon initialization. All dogfooding validations, test sweeps, and PRD success metrics have been fully met.
 > - **Stable Install & Auto-MCP Configuration:** Implemented stable binary self-install path command (`dossier install`, default `~/.local/bin/dossier`), volatile path detection on `init`, and auto-registration of both the MCP stdio server and lifecycle hooks in Claude Code's user/global configuration files (preserving existing third-party configs and backing up changed files).
 > - **v1 rescoped to Claude Code only (2026-06-16):** Codex and Antigravity harnesses removed from code and docs. Claude Code is the single supported harness — it provides the full capability set; the degraded Tier 2/3 levels other harnesses reached were insufficient. The `Harness` interface/registry remain for possible future harnesses.
 
-All features are fully operational, tested, and committed directly to `main`.
+All features (CLI, MCP, and Rich TUI) are fully operational, tested, and integrated.
 
 
 

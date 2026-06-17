@@ -10,6 +10,7 @@ import (
 	"dossier/internal/search"
 	"dossier/internal/store"
 	"dossier/internal/tokenizer"
+	"dossier/internal/tui"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -38,6 +39,15 @@ func NewRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "dossier",
 		Short: "Dossier: durable memory layer for agent-driven work",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			homeDir := resolveHomeDir()
+			svc, err := wire(homeDir)
+			if err != nil {
+				return err
+			}
+			sessID := resolveSessionID()
+			return tui.Run(context.Background(), svc, sessID)
+		},
 	}
 
 	rootCmd.PersistentFlags().StringVar(&dossierHomeFlag, "home", "", "Override default Dossier home directory")
@@ -907,6 +917,20 @@ func NewRootCmd() *cobra.Command {
 		},
 	}
 
+	tuiCmd := &cobra.Command{
+		Use:   "tui",
+		Short: "Launch the interactive text user interface (TUI)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			homeDir := resolveHomeDir()
+			svc, err := wire(homeDir)
+			if err != nil {
+				return err
+			}
+			sessID := resolveSessionID()
+			return tui.Run(context.Background(), svc, sessID)
+		},
+	}
+
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(installCmd)
 	rootCmd.AddCommand(doctorCmd)
@@ -927,6 +951,7 @@ func NewRootCmd() *cobra.Command {
 	rootCmd.AddCommand(questionsCmd)
 	rootCmd.AddCommand(priorityCmd)
 	rootCmd.AddCommand(hookCmd)
+	rootCmd.AddCommand(tuiCmd)
 
 	return rootCmd
 }

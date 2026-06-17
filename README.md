@@ -60,6 +60,24 @@ dossier archive payments-migration                       # archive (never delete
 
 Full reference: `dossier --help`.
 
+### In the terminal UI
+
+For interactive browsing and editing, launch the full-screen TUI — run `dossier` with no arguments, or `dossier tui`:
+
+```bash
+dossier        # or: dossier tui
+```
+
+It opens a priority-sorted dashboard of your open Dossiers. From there you can:
+
+- **open** a Dossier to read its distilled state (with a live token estimate and over-target warning),
+- **edit** status, priority (importance/urgency/due date), and next action inline,
+- **switch** the session's active Dossier,
+- **link** a source, resolving ambiguous matches by picking from ranked candidates, and
+- **merge** one Dossier into another, resolving any conflicts in a side-by-side view (sources are archived, never deleted).
+
+The TUI is a thin layer over the same core as the CLI and MCP, so it behaves identically — `q` quits, `?` toggles help.
+
 ## How it works
 
 Each Dossier is a directory under `~/.dossier/<slug>/`:
@@ -79,7 +97,7 @@ One Go binary serves the CLI, the MCP-over-stdio server, and the session hooks. 
 
 ## Project status
 
-All core milestones are implemented: file store, recall/search, MCP server, session hooks, promote/link/merge, concurrency handling, and the Distillation Guide. See `HANDOFF.md` for per-milestone status and `SPEC.md` for the full contract.
+All core milestones are implemented: file store, recall/search, MCP server, session hooks, promote/link/merge, concurrency handling, the Distillation Guide, and the interactive TUI. See `HANDOFF.md` for per-milestone status and `SPEC.md` for the full contract.
 
 *Naming:* **Dossier** is the tool; *a Dossier* is one topic; *Dossiers* are many. The repo directory is `dossiers`; the project is **Dossier**.
 
