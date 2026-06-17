@@ -1,0 +1,15 @@
+# ADR 0002: TUI Session Identity Resolution
+
+## Status
+Accepted
+
+## Context
+For the interactive local TUI, we need to determine how the session identity is established. The CLI and MCP adapters resolve the active session ID by checking the `--session` flag, falling back to the `DOSSIER_SESSION` environment variable, and ultimately defaulting to `"sess_default"`.
+
+## Decision
+We chose to reuse the exact same session resolution logic as the CLI (reusing `resolveSessionID()`, which checks the flag, the `DOSSIER_SESSION` environment variable, and defaults to `"sess_default"`). 
+
+## Consequences
+- The TUI shares the same active dossier binding as concurrent CLI or MCP commands in the same shell session.
+- Users can switch or query the active dossier in the TUI, and the CLI/MCP will immediately observe the same active dossier under the same session ID.
+- Keeps the system simple, consistent, and predictable across all three interfaces (CLI, MCP, TUI).

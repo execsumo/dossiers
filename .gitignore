@@ -18,3 +18,6 @@ go.work.sum
 
 # Local Dossier store (never commit a user's data)
 .dossier/
+
+# Local CodeGraph index (derived cache)
+.codegraph/
