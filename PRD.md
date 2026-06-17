@@ -123,7 +123,7 @@ Local-first. One directory per Dossier; no index, no DB.
 
 ### 4.2 Resume / recall (D7)
 - `dossier_recall(id)` returns the full Distilled State. It targets **100k tokens** for the Distilled State context. If the Distilled State is over target, recall still succeeds but returns an explicit warning and recommended next steps (split, archive resolved material, or reorganize with the agent). Archive artifacts are not loaded by default; they are retrieved on demand.
-- `dossier_search_archive(id, query)` retrieves specific artifacts on demand.
+- `dossier_search(query, dossier_id?)` retrieves specific artifacts on demand (scope to a dossier for archive-style retrieval).
 
 ### 4.3 Promote (job 1)
 - `dossier_promote` creates a new Dossier from the current session: the agent passes content for the initial Distilled State and writes it per the Distillation Guide (D4/§4.11 — no confirm gate).
@@ -178,14 +178,14 @@ All tools are namespaced with a **`dossier_` prefix** so they're unambiguously i
 
 - `dossier_list` — open-work list for in-session refresh (deterministic surfacing is the hook's job, §4.1)
 - `dossier_recall(id)` — token-targeted resume (§4.2)
-- `dossier_search_archive(id, query)` / `dossier_search(query)`
+- `dossier_search(query, dossier_id?)`
 - `dossier_save(id)` — governed write, no gate (§4.4, §4.11)
 - `dossier_promote()` — promote current session
 - `dossier_link(id?)` — with suggestions
 - `dossier_merge(a, b)` — conflicts surfaced
 - `dossier_active()` / `dossier_switch(id)` — inspect or change the Dossier bound to the current agent session
-- `dossier_set_status` / `dossier_set_next_action` / `dossier_set_open_questions`
-- `dossier_set_priority(id, importance?, urgency?, due_date?)` — sets the prioritization fields used by surfacing (§4.1)
+- `dossier_set_status` — lifecycle status change
+- `dossier_update(id, next_action?, open_questions?, importance?, urgency?, due_date?)` — update any metadata fields in one call
 - `dossier_path(id?)` — returns the active or specified Dossier directory path for inspection in the user's own tools
 
 Write tools **commit without a human gate** (D4), but writes are governed by the Distillation Guide and fire on a deterministic cadence (§4.11) — not at the agent's discretion. Safety is structural: nothing is deleted, the audit log records every write, and the user can edit any Distilled State after the fact. Exceptions: ambiguous link targets and merge conflict resolution require human disambiguation; that's contradiction/target resolution, not a distillation review gate.
@@ -228,7 +228,7 @@ The token target governs the **Distilled State context loaded on recall**. The d
 | Component | Budget | On overflow |
 |-----------|--------|-------------|
 | Distilled State | target 100k tokens, loads in full by default | Return an explicit warning and ask the agent/user to decide whether to proceed, reorganize, archive resolved material, split the topic, or remove non-critical material. |
-| Archive artifacts on recall | not loaded by default | Retrieve specific artifacts via `dossier_search_archive`; avoid carrying raw artifacts into context unless requested or directly needed. |
+| Archive artifacts on recall | not loaded by default | Retrieve specific artifacts via `dossier_search(query, dossier_id)`; avoid carrying raw artifacts into context unless requested or directly needed. |
 
 **Tokenizer:** use a single reasonable tokenizer benchmarked against **Opus 4.8** as the reference; precision per target model is not required. Caveat this in the README. The 100k figure is configurable.
 

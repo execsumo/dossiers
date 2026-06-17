@@ -437,7 +437,6 @@ Required tools:
 - `dossier_list`
 - `dossier_recall`
 - `dossier_search`
-- `dossier_search_archive`
 - `dossier_save`
 - `dossier_promote`
 - `dossier_link`
@@ -446,9 +445,7 @@ Required tools:
 - `dossier_switch`
 - `dossier_path`
 - `dossier_set_status`
-- `dossier_set_next_action`
-- `dossier_set_open_questions`
-- `dossier_set_priority`
+- `dossier_update`
 
 ### 8.2 Tool Contracts
 

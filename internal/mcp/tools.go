@@ -77,20 +77,6 @@ func getToolDefinitions() []ToolDefinition {
 			},
 		},
 		{
-			Name:        "dossier_search_archive",
-			Description: "Search across archived dossiers (behaves identically to global search)",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"query": map[string]any{
-						"type":        "string",
-						"description": "The search query term",
-					},
-				},
-				"required": []string{"query"},
-			},
-		},
-		{
 			Name:        "dossier_save",
 			Description: "Save a dossier's distilled state and/or update its metadata and artifacts",
 			InputSchema: map[string]any{
@@ -98,7 +84,7 @@ func getToolDefinitions() []ToolDefinition {
 				"properties": map[string]any{
 					"id": map[string]any{
 						"type":        "string",
-						"description": "The dossier ID (leave blank to create a new one)",
+						"description": "The dossier slug or ID to update. Required; use dossier_promote to create a new dossier.",
 					},
 					"base_revision": map[string]any{
 						"type":        "string",
@@ -216,41 +202,19 @@ func getToolDefinitions() []ToolDefinition {
 			},
 		},
 		{
-			Name:        "dossier_set_next_action",
-			Description: "Set a dossier's next action",
+			Name:        "dossier_update",
+			Description: "Update a dossier's metadata fields — next action, open questions, and/or priority (importance, urgency, due date). All fields except id are optional; only supplied fields are written.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"id":          map[string]any{"type": "string"},
-					"next_action": map[string]any{"type": "string"},
+					"id":             map[string]any{"type": "string", "description": "The dossier slug or ID to update"},
+					"next_action":    map[string]any{"type": "string", "description": "Replace the current next action (omit to leave unchanged)"},
+					"open_questions": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Replace the open questions list (omit to leave unchanged)"},
+					"importance":     map[string]any{"type": "string", "description": "low|medium|high (omit to leave unchanged)"},
+					"urgency":        map[string]any{"type": "string", "description": "low|medium|high (omit to leave unchanged)"},
+					"due_date":       map[string]any{"type": "string", "description": "ISO 8601 date or empty string to clear (omit to leave unchanged)"},
 				},
-				"required": []string{"id", "next_action"},
-			},
-		},
-		{
-			Name:        "dossier_set_open_questions",
-			Description: "Set/add open questions for a dossier",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"id":             map[string]any{"type": "string"},
-					"open_questions": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-				},
-				"required": []string{"id", "open_questions"},
-			},
-		},
-		{
-			Name:        "dossier_set_priority",
-			Description: "Set importance, urgency, and due date for a dossier",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"id":         map[string]any{"type": "string"},
-					"importance": map[string]any{"type": "string"},
-					"urgency":    map[string]any{"type": "string"},
-					"due_date":   map[string]any{"type": "string"},
-				},
-				"required": []string{"id", "importance", "urgency"},
+				"required": []string{"id"},
 			},
 		},
 	}
@@ -278,7 +242,7 @@ func (s *Server) handleToolCall(ctx context.Context, id any, name string, args j
 		}
 		res, err = s.svc.Recall(ctx, core.RecallReq{ID: params.ID})
 
-	case "dossier_search", "dossier_search_archive":
+	case "dossier_search":
 		var params struct {
 			Query     string `json:"query"`
 			DossierID string `json:"dossier_id"`
@@ -440,52 +404,38 @@ func (s *Server) handleToolCall(ctx context.Context, id any, name string, args j
 		}
 		res, err = s.svc.SetStatus(ctx, core.SetStatusReq{ID: params.ID, Status: params.Status})
 
-	case "dossier_set_next_action":
-		var params struct {
-			ID         string `json:"id"`
-			NextAction string `json:"next_action"`
-		}
-		if err := json.Unmarshal(args, &params); err != nil {
-			s.sendError(id, -32602, "Invalid params", nil)
-			return
-		}
-		res, err = s.svc.Save(ctx, core.SaveReq{
-			ID:                 params.ID,
-			FrontmatterUpdates: map[string]any{"next_action": params.NextAction},
-		})
-
-	case "dossier_set_open_questions":
+	case "dossier_update":
 		var params struct {
 			ID            string   `json:"id"`
+			NextAction    *string  `json:"next_action"`
 			OpenQuestions []string `json:"open_questions"`
+			Importance    string   `json:"importance"`
+			Urgency       string   `json:"urgency"`
+			DueDate       string   `json:"due_date"`
 		}
 		if err := json.Unmarshal(args, &params); err != nil {
 			s.sendError(id, -32602, "Invalid params", nil)
 			return
+		}
+		updates := map[string]any{}
+		if params.NextAction != nil {
+			updates["next_action"] = *params.NextAction
+		}
+		if params.OpenQuestions != nil {
+			updates["open_questions"] = params.OpenQuestions
+		}
+		if params.Importance != "" {
+			updates["importance"] = params.Importance
+		}
+		if params.Urgency != "" {
+			updates["urgency"] = params.Urgency
+		}
+		if params.DueDate != "" {
+			updates["due_date"] = params.DueDate
 		}
 		res, err = s.svc.Save(ctx, core.SaveReq{
 			ID:                 params.ID,
-			FrontmatterUpdates: map[string]any{"open_questions": params.OpenQuestions},
-		})
-
-	case "dossier_set_priority":
-		var params struct {
-			ID         string `json:"id"`
-			Importance string `json:"importance"`
-			Urgency    string `json:"urgency"`
-			DueDate    string `json:"due_date"`
-		}
-		if err := json.Unmarshal(args, &params); err != nil {
-			s.sendError(id, -32602, "Invalid params", nil)
-			return
-		}
-		res, err = s.svc.Save(ctx, core.SaveReq{
-			ID: params.ID,
-			FrontmatterUpdates: map[string]any{
-				"importance": params.Importance,
-				"urgency":    params.Urgency,
-				"due_date":   params.DueDate,
-			},
+			FrontmatterUpdates: updates,
 		})
 
 	default:
