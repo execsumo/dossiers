@@ -185,7 +185,7 @@ func TestTUI_Dashboard(t *testing.T) {
 	}
 	svc := setupTestService(store)
 
-	m := NewModel(svc, "test_session")
+	m := NewModel(svc, "test_session", true)
 	m.width = 100
 	m.height = 40
 	m.recalculateTableLayout()
@@ -242,7 +242,7 @@ func TestTUI_Detail(t *testing.T) {
 		},
 	}
 	svc := setupTestService(store)
-	m := NewModel(svc, "test_session")
+	m := NewModel(svc, "test_session", true)
 	m.width = 100
 	m.height = 40
 	m.recalculateTableLayout()
@@ -293,7 +293,7 @@ func TestTUI_InlineEditing(t *testing.T) {
 		},
 	}
 	svc := setupTestService(store)
-	m := NewModel(svc, "test_session")
+	m := NewModel(svc, "test_session", true)
 	m.width = 100
 	m.height = 40
 	m.recalculateTableLayout()
@@ -386,7 +386,7 @@ func TestTUI_SwitchActive(t *testing.T) {
 		},
 	}
 	svc := setupTestService(store)
-	m := NewModel(svc, "test_session")
+	m := NewModel(svc, "test_session", true)
 	m.width = 100
 	m.height = 40
 	m.recalculateTableLayout()
@@ -456,7 +456,7 @@ func TestTUI_Link(t *testing.T) {
 		},
 	}
 	svc := setupTestService(store)
-	m := NewModel(svc, "test_session")
+	m := NewModel(svc, "test_session", true)
 	m.width = 100
 	m.height = 40
 	m.recalculateTableLayout()
@@ -538,7 +538,7 @@ func TestTUI_Merge(t *testing.T) {
 		},
 	}
 	svc := setupTestService(store)
-	m := NewModel(svc, "test_session")
+	m := NewModel(svc, "test_session", true)
 	m.width = 100
 	m.height = 40
 	m.recalculateTableLayout()
@@ -592,5 +592,41 @@ func TestTUI_Merge(t *testing.T) {
 
 	if m.currentView != ViewDashboard {
 		t.Errorf("expected view to return to ViewDashboard, got %v", m.currentView)
+	}
+}
+
+func TestSessionHeaderDisplay(t *testing.T) {
+	store := newTestStore()
+	svc := setupTestService(store)
+
+	// Scenario 1: Real session (isRealSession = true)
+	mReal := NewModel(svc, "test-uuid-1234", true)
+	mReal.width = 100
+	mReal.height = 40
+	mReal.recalculateTableLayout()
+
+	viewReal := mReal.View()
+	if !strings.Contains(viewReal, "Session: test-uuid-1234") {
+		t.Errorf("expected view to contain 'Session: test-uuid-1234', got:\n%s", viewReal)
+	}
+	if strings.Contains(viewReal, "No active Claude session") {
+		t.Errorf("expected view NOT to contain 'No active Claude session' for a real session, got:\n%s", viewReal)
+	}
+
+	// Scenario 2: Default fallback (isRealSession = false)
+	mDefault := NewModel(svc, "sess_default", false)
+	mDefault.width = 100
+	mDefault.height = 40
+	mDefault.recalculateTableLayout()
+
+	viewDefault := mDefault.View()
+	if strings.Contains(viewDefault, "Session: sess_default") {
+		t.Errorf("expected view NOT to contain 'Session: sess_default' for a default fallback, got:\n%s", viewDefault)
+	}
+	if !strings.Contains(viewDefault, "Session: (local default — no active Claude session)") {
+		t.Errorf("expected view to contain 'Session: (local default — no active Claude session)', got:\n%s", viewDefault)
+	}
+	if !strings.Contains(viewDefault, "No active Claude session — 'active' binding uses local default bucket") {
+		t.Errorf("expected view to contain warning footer note, got:\n%s", viewDefault)
 	}
 }

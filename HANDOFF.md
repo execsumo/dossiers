@@ -27,7 +27,7 @@ Precedence when docs disagree: `BUILD-DECISIONS.md` > `SPEC.md` (mechanics) > `P
 
 All features (CLI, MCP, and Rich TUI) are fully operational, tested, and integrated.
 
-> **Pending follow-up — TUI catch-up to the session-id fix:** the TUI already resolves `CLAUDE_CODE_SESSION_ID` (it shares `cli.resolveSessionID`), but its session/active *presentation* hasn't been updated for the new reality. See the **"Catch-up after the MCP session-id fix"** section in `docs/tui-plan.md` for the concrete dev items (honest session-header display, surfacing the `sess_default` fallback, the intentional MCP-vs-TUI degrade divergence, and tests). Not blocking; no agent-facing behavior depends on it.
+> **TUI catch-up to the session-id fix completed (2026-06-16):** The TUI's session/active presentation has been updated to reflect whether it is running in a real session vs fallback. Added honest header banner and warning footer note for standalone mode, documented the intentional MCP-vs-TUI divergence, and added comprehensive unit tests.
 
 
 

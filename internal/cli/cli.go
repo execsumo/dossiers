@@ -45,8 +45,8 @@ func NewRootCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			sessID := resolveSessionID()
-			return tui.Run(context.Background(), svc, sessID)
+			sessID, isReal := resolveSessionID()
+			return tui.Run(context.Background(), svc, sessID, isReal)
 		},
 	}
 
@@ -605,7 +605,7 @@ func NewRootCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
-			sessID := resolveSessionID()
+			sessID, _ := resolveSessionID()
 			res, err := svc.Active(context.Background(), core.ActiveReq{SessionID: sessID})
 			if err != nil {
 				if jsonFlag {
@@ -642,7 +642,7 @@ func NewRootCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
-			sessID := resolveSessionID()
+			sessID, _ := resolveSessionID()
 			res, err := svc.Switch(context.Background(), core.SwitchReq{ID: args[0], SessionID: sessID})
 			if err != nil {
 				fmt.Printf("Switch failed: %v\n", err)
@@ -890,7 +890,7 @@ func NewRootCmd() *cobra.Command {
 
 			sessID := payload.SessionID
 			if sessID == "" {
-				sessID = resolveSessionID()
+				sessID, _ = resolveSessionID()
 			}
 
 			switch args[0] {
@@ -926,8 +926,8 @@ func NewRootCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			sessID := resolveSessionID()
-			return tui.Run(context.Background(), svc, sessID)
+			sessID, isReal := resolveSessionID()
+			return tui.Run(context.Background(), svc, sessID, isReal)
 		},
 	}
 
@@ -970,12 +970,23 @@ func resolveHomeDir() string {
 	return config.Default().DossierHome
 }
 
-func resolveSessionID() string {
-	// allowDefault: the CLI is also used for manual, non-session invocations, so it
-	// falls back to the shared bucket. Precedence (flag > CLAUDE_CODE_SESSION_ID >
-	// DOSSIER_SESSION > default) lives in harness.ResolveSessionID so CLI and MCP agree.
-	sid, _ := harness.ResolveSessionID(sessionFlag, true)
-	return sid
+// resolveSessionID determines the session ID and whether it is a "real" session (i.e.
+// resolved from a real harness/explicit source rather than the sess_default fallback).
+//
+// NOTE (ADR 0003 / Divergence): The CLI and TUI deliberately fall back to the DefaultSessionID
+// ("sess_default") when no explicit session/harness session is resolved (allowDefault=true).
+// This differs from the MCP adapter, which uses allowDefault=false and errors (ErrNoSessionID)
+// if no real session resolves, preventing silent cross-contamination of concurrent agent sessions.
+// The interactive local TUI is allowed to fall back to a local default bucket for convenience.
+func resolveSessionID() (string, bool) {
+	// Attempt to resolve a session ID without allowing the default fallback.
+	sid, err := harness.ResolveSessionID(sessionFlag, false)
+	if err == nil {
+		return sid, true
+	}
+	// Fall back to the default fallback bucket.
+	defaultSid, _ := harness.ResolveSessionID(sessionFlag, true)
+	return defaultSid, false
 }
 
 func printJSON(data any) {

@@ -155,9 +155,10 @@ type targetDossier struct {
 
 // Model holds the application state.
 type Model struct {
-	svc         *core.Service
-	sessionID   string
-	currentView View
+	svc           *core.Service
+	sessionID     string
+	isRealSession bool
+	currentView   View
 
 	// Data
 	items        []core.ListItem
@@ -215,7 +216,7 @@ type Model struct {
 }
 
 // NewModel instantiates the root TUI model.
-func NewModel(svc *core.Service, sessionID string) Model {
+func NewModel(svc *core.Service, sessionID string, isRealSession bool) Model {
 	// Initialize default empty table
 	columns := []table.Column{
 		{Title: "A", Width: 2},
@@ -257,6 +258,7 @@ func NewModel(svc *core.Service, sessionID string) Model {
 	return Model{
 		svc:              svc,
 		sessionID:        sessionID,
+		isRealSession:    isRealSession,
 		currentView:      ViewDashboard,
 		table:            t,
 		viewport:         vp,
@@ -1236,7 +1238,13 @@ func (m Model) View() string {
 	var sb strings.Builder
 
 	// 1. Header Banner
-	headerText := fmt.Sprintf(" DOSSIER TUI │ Session: %s │ Active: %s ", m.sessionID, m.activeName)
+	var sessionDisplay string
+	if m.isRealSession {
+		sessionDisplay = m.sessionID
+	} else {
+		sessionDisplay = "(local default — no active Claude session)"
+	}
+	headerText := fmt.Sprintf(" DOSSIER TUI │ Session: %s │ Active: %s ", sessionDisplay, m.activeName)
 	sb.WriteString(titleStyle.Render(headerText))
 	sb.WriteString("\n")
 
@@ -1338,6 +1346,9 @@ func (m Model) View() string {
 	// 3. Footer / Help area
 	sb.WriteString("\n")
 	var footerParts []string
+	if !m.isRealSession {
+		footerParts = append(footerParts, warningStyle.Render("⚠ No active Claude session — 'active' binding uses local default bucket"))
+	}
 	if len(m.warnings) > 0 {
 		for _, w := range m.warnings {
 			footerParts = append(footerParts, warningStyle.Render(fmt.Sprintf("⚠ %s", w)))
@@ -1371,9 +1382,12 @@ func (m Model) View() string {
 }
 
 // Run sets up the program, enters the alt-screen, and executes.
-func Run(ctx context.Context, svc *core.Service, sessionID string) error {
+//
+// NOTE (ADR 0003 / Divergence): MCP uses allowDefault=false and errors when no session resolves;
+// CLI/TUI use allowDefault=true and fall back to sess_default. This asymmetry is deliberate.
+func Run(ctx context.Context, svc *core.Service, sessionID string, isRealSession bool) error {
 	p := tea.NewProgram(
-		NewModel(svc, sessionID),
+		NewModel(svc, sessionID, isRealSession),
 		tea.WithAltScreen(),
 		tea.WithContext(ctx),
 	)
