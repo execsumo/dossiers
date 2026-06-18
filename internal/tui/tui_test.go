@@ -185,7 +185,7 @@ func TestTUI_Dashboard(t *testing.T) {
 	}
 	svc := setupTestService(store)
 
-	m := NewModel(svc, "test_session", true)
+	m := NewModel(svc)
 	m.width = 100
 	m.height = 40
 	m.recalculateTableLayout()
@@ -202,14 +202,12 @@ func TestTUI_Dashboard(t *testing.T) {
 		t.Errorf("expected view to contain loading indicator, got:\n%s", viewStr)
 	}
 
-	// Perform the async loads manually
+	// Perform the async load manually
 	listMsg := m.listDossiersCmd()()
-	activeMsg := m.getActiveDossierCmd()()
 
 	// Update the model with results
 	var newM tea.Model
 	newM, _ = m.Update(listMsg)
-	newM, _ = newM.Update(activeMsg)
 
 	updatedModel := newM.(Model)
 	if len(updatedModel.items) != 1 {
@@ -242,7 +240,7 @@ func TestTUI_Detail(t *testing.T) {
 		},
 	}
 	svc := setupTestService(store)
-	m := NewModel(svc, "test_session", true)
+	m := NewModel(svc)
 	m.width = 100
 	m.height = 40
 	m.recalculateTableLayout()
@@ -293,7 +291,7 @@ func TestTUI_InlineEditing(t *testing.T) {
 		},
 	}
 	svc := setupTestService(store)
-	m := NewModel(svc, "test_session", true)
+	m := NewModel(svc)
 	m.width = 100
 	m.height = 40
 	m.recalculateTableLayout()
@@ -374,7 +372,11 @@ func TestTUI_InlineEditing(t *testing.T) {
 	}
 }
 
-func TestTUI_SwitchActive(t *testing.T) {
+// TestTUI_NoActiveBinding asserts the TUI exposes no per-session "active"
+// affordance: pressing 'a' is a no-op, and the dashboard has no ★ marker. The
+// per-session active binding (Switch) is intentionally not reachable from the
+// TUI — see ADR 0004 and BUILD-DECISIONS B9.
+func TestTUI_NoActiveBinding(t *testing.T) {
 	store := newTestStore()
 	store.dossiers["dos1"] = &core.Dossier{
 		Frontmatter: core.Frontmatter{
@@ -386,7 +388,7 @@ func TestTUI_SwitchActive(t *testing.T) {
 		},
 	}
 	svc := setupTestService(store)
-	m := NewModel(svc, "test_session", true)
+	m := NewModel(svc)
 	m.width = 100
 	m.height = 40
 	m.recalculateTableLayout()
@@ -396,41 +398,20 @@ func TestTUI_SwitchActive(t *testing.T) {
 	newM, _ := m.Update(listMsg)
 	m = newM.(Model)
 
-	if m.activeID != "" {
-		t.Fatalf("expected initial activeID to be empty, got %q", m.activeID)
-	}
-
-	// Press 'a' key to switch active dossier
+	// Press 'a': must be a no-op (no command, view unchanged).
 	newM, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
 	m = newM.(Model)
-	if cmd == nil {
-		t.Fatal("expected 'a' key to return switch active command")
+	if cmd != nil {
+		t.Error("expected 'a' key to be a no-op, but it returned a command")
+	}
+	if m.currentView != ViewDashboard {
+		t.Errorf("expected to remain on ViewDashboard, got %v", m.currentView)
 	}
 
-	// Execute switch active command
-	switchMsg := cmd()
-	newM, cmd = m.Update(switchMsg)
-	m = newM.(Model)
-
-	// Since switch returns listDossiersCmd and activeDossierCmd in a batch, we run them:
-	if cmd == nil {
-		t.Fatal("expected switch msg to trigger refresh commands")
-	}
-	// Simulate the batch refresh
-	// Normally tea program handles batch, but headlessly we can call the commands returned.
-	// Since cmd represents the batch, we can manually check if activeID is set (it is set in switchActiveMsg handler!)
-	if m.activeID != "dos1" {
-		t.Errorf("expected activeID to be 'dos1', got %q", m.activeID)
-	}
-
-	if m.activeName != "Project Alpha" {
-		t.Errorf("expected activeName to be 'Project Alpha', got %q", m.activeName)
-	}
-
-	// Verify view contains the active dossier marker (star)
+	// The dashboard must not render an active-dossier star marker.
 	viewStr := m.View()
-	if !strings.Contains(viewStr, "★") {
-		t.Errorf("expected view to contain active dossier star marker, got:\n%s", viewStr)
+	if strings.Contains(viewStr, "★") {
+		t.Errorf("expected no active dossier star marker, got:\n%s", viewStr)
 	}
 }
 
@@ -456,7 +437,7 @@ func TestTUI_Link(t *testing.T) {
 		},
 	}
 	svc := setupTestService(store)
-	m := NewModel(svc, "test_session", true)
+	m := NewModel(svc)
 	m.width = 100
 	m.height = 40
 	m.recalculateTableLayout()
@@ -538,7 +519,7 @@ func TestTUI_Merge(t *testing.T) {
 		},
 	}
 	svc := setupTestService(store)
-	m := NewModel(svc, "test_session", true)
+	m := NewModel(svc)
 	m.width = 100
 	m.height = 40
 	m.recalculateTableLayout()
@@ -595,38 +576,25 @@ func TestTUI_Merge(t *testing.T) {
 	}
 }
 
-func TestSessionHeaderDisplay(t *testing.T) {
+// TestHeaderHasNoSession asserts the TUI carries no session identity: the header
+// shows only the app title, with no "Session:" or "Active:" field and no
+// standalone-session warning footer. See ADR 0004.
+func TestHeaderHasNoSession(t *testing.T) {
 	store := newTestStore()
 	svc := setupTestService(store)
 
-	// Scenario 1: Real session (isRealSession = true)
-	mReal := NewModel(svc, "test-uuid-1234", true)
-	mReal.width = 100
-	mReal.height = 40
-	mReal.recalculateTableLayout()
+	m := NewModel(svc)
+	m.width = 100
+	m.height = 40
+	m.recalculateTableLayout()
 
-	viewReal := mReal.View()
-	if !strings.Contains(viewReal, "Session: test-uuid-1234") {
-		t.Errorf("expected view to contain 'Session: test-uuid-1234', got:\n%s", viewReal)
+	view := m.View()
+	if !strings.Contains(view, "DOSSIER TUI") {
+		t.Errorf("expected view to contain the 'DOSSIER TUI' title, got:\n%s", view)
 	}
-	if strings.Contains(viewReal, "No active Claude session") {
-		t.Errorf("expected view NOT to contain 'No active Claude session' for a real session, got:\n%s", viewReal)
-	}
-
-	// Scenario 2: Default fallback (isRealSession = false)
-	mDefault := NewModel(svc, "sess_default", false)
-	mDefault.width = 100
-	mDefault.height = 40
-	mDefault.recalculateTableLayout()
-
-	viewDefault := mDefault.View()
-	if strings.Contains(viewDefault, "Session: sess_default") {
-		t.Errorf("expected view NOT to contain 'Session: sess_default' for a default fallback, got:\n%s", viewDefault)
-	}
-	if !strings.Contains(viewDefault, "Session: (local default — no active Claude session)") {
-		t.Errorf("expected view to contain 'Session: (local default — no active Claude session)', got:\n%s", viewDefault)
-	}
-	if !strings.Contains(viewDefault, "No active Claude session — 'active' binding uses local default bucket") {
-		t.Errorf("expected view to contain warning footer note, got:\n%s", viewDefault)
+	for _, forbidden := range []string{"Session:", "Active:", "No active Claude session"} {
+		if strings.Contains(view, forbidden) {
+			t.Errorf("expected view NOT to contain %q, got:\n%s", forbidden, view)
+		}
 	}
 }

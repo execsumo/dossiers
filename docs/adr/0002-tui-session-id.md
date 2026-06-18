@@ -1,7 +1,11 @@
 # ADR 0002: TUI Session Identity Resolution
 
 ## Status
-Accepted — precedence updated by [ADR 0003](0003-mcp-session-id-from-env.md).
+**Superseded by [ADR 0004](0004-tui-no-session.md)** (2026-06-17): the TUI no longer
+resolves or carries any session identity, so the decision below (the TUI reuses the CLI's
+`resolveSessionID()`) no longer applies. Retained for history.
+
+Previously: Accepted — precedence updated by [ADR 0003](0003-mcp-session-id-from-env.md).
 
 > Update (2026-06-16, ADR 0003): the shared resolver now inserts `CLAUDE_CODE_SESSION_ID`
 > ahead of `DOSSIER_SESSION` in the precedence ladder. The decision below (the TUI reuses the

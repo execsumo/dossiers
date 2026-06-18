@@ -54,7 +54,8 @@ A full-screen Bubble Tea app. Build in this order so the tree always compiles an
 - `n` → next-action `textinput` → `svc.SetNextAction`.
 - After each mutation, re-fetch via `svc.List`/`svc.Recall` and re-render. Show any returned warnings; on error show the typed domain error message (don't crash).
 
-### Step 4 — Switch (bind active dossier to session)
+### Step 4 — Switch (bind active dossier to session) — REMOVED (see ADR 0004)
+> This step was built, then removed on 2026-06-17: the TUI no longer exposes `Switch`/`Active`. Kept for history.
 - `enter`/`a` action "make active" → `svc.Switch{ID, SessionID}` → reflect new active binding (call `svc.Active` to confirm). Mark the active dossier in the dashboard.
 
 ### Step 5 — Link & merge conflict resolution (the interactive payoff)
@@ -68,7 +69,14 @@ A full-screen Bubble Tea app. Build in this order so the tree always compiles an
 
 ---
 
-## Catch-up after the MCP session-id fix (2026-06-16, ADR 0003) — TODO
+## Catch-up after the MCP session-id fix (2026-06-16, ADR 0003) — OBSOLETE
+
+> **Superseded by [ADR 0004](adr/0004-tui-no-session.md) (2026-06-17).** The TUI no longer
+> resolves or carries any session identity and no longer exposes the per-session active
+> binding (`Switch`/`Active`). The `a` key, the `★` marker, the `Session:`/`Active:` header
+> fields, and the standalone-session footer warning were all removed — so items 1–3 below
+> (honest session header, honest active, "don't fix the divergence") are **moot, not
+> pending**. The section is kept only for history; do not action it.
 
 > Context: the MCP `dossier_switch`/`dossier_active` gap was fixed by `harness.ResolveSessionID`
 > (precedence `explicit → CLAUDE_CODE_SESSION_ID → DOSSIER_SESSION → sess_default`). The TUI

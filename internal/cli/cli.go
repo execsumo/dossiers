@@ -45,8 +45,7 @@ func NewRootCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			sessID, isReal := resolveSessionID()
-			return tui.Run(context.Background(), svc, sessID, isReal)
+			return tui.Run(context.Background(), svc)
 		},
 	}
 
@@ -926,8 +925,7 @@ func NewRootCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			sessID, isReal := resolveSessionID()
-			return tui.Run(context.Background(), svc, sessID, isReal)
+			return tui.Run(context.Background(), svc)
 		},
 	}
 

@@ -38,7 +38,6 @@ var (
 	darkGray     = lipgloss.Color("237")
 	vibrantGreen = lipgloss.Color("42")
 	vibrantRed   = lipgloss.Color("196")
-	vibrantBlue  = lipgloss.Color("33")
 	warningGold  = lipgloss.Color("208")
 
 	titleStyle = lipgloss.NewStyle().
@@ -50,14 +49,6 @@ var (
 	subtitleStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("244")).
 			Italic(true)
-
-	activeDossierStyle = lipgloss.NewStyle().
-				Foreground(vibrantGreen).
-				Bold(true)
-
-	sessionStyle = lipgloss.NewStyle().
-			Foreground(vibrantBlue).
-			Bold(true)
 
 	headerStyle = lipgloss.NewStyle().
 			Foreground(purple).
@@ -108,14 +99,7 @@ var (
 
 // Messages
 type listDossiersMsg []core.ListItem
-type activeDossierMsg *core.SessionBinding
 type recallDossierMsg struct {
-	id       string
-	result   core.RecallResult
-	err      error
-	warnings []core.Warning
-}
-type switchActiveMsg struct {
 	id       string
 	result   core.RecallResult
 	err      error
@@ -155,15 +139,11 @@ type targetDossier struct {
 
 // Model holds the application state.
 type Model struct {
-	svc           *core.Service
-	sessionID     string
-	isRealSession bool
-	currentView   View
+	svc         *core.Service
+	currentView View
 
 	// Data
 	items        []core.ListItem
-	activeID     string
-	activeName   string
 	recallResult core.RecallResult
 
 	// Viewport & Table
@@ -216,10 +196,9 @@ type Model struct {
 }
 
 // NewModel instantiates the root TUI model.
-func NewModel(svc *core.Service, sessionID string, isRealSession bool) Model {
+func NewModel(svc *core.Service) Model {
 	// Initialize default empty table
 	columns := []table.Column{
-		{Title: "A", Width: 2},
 		{Title: "Name", Width: 22},
 		{Title: "Status", Width: 10},
 		{Title: "Priority", Width: 8},
@@ -257,8 +236,6 @@ func NewModel(svc *core.Service, sessionID string, isRealSession bool) Model {
 
 	return Model{
 		svc:              svc,
-		sessionID:        sessionID,
-		isRealSession:    isRealSession,
 		currentView:      ViewDashboard,
 		table:            t,
 		viewport:         vp,
@@ -270,10 +247,7 @@ func NewModel(svc *core.Service, sessionID string, isRealSession bool) Model {
 
 // Init initializes the tea program, triggering initial loads.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(
-		m.listDossiersCmd(),
-		m.getActiveDossierCmd(),
-	)
+	return m.listDossiersCmd()
 }
 
 // listDossiersCmd fetches the dossier list asynchronously.
@@ -292,21 +266,6 @@ func (m Model) listDossiersCmd() tea.Cmd {
 	}
 }
 
-// getActiveDossierCmd fetches the currently active session binding.
-func (m Model) getActiveDossierCmd() tea.Cmd {
-	return func() tea.Msg {
-		res, err := m.svc.Active(context.Background(), core.ActiveReq{SessionID: m.sessionID})
-		if err != nil {
-			return activeDossierMsg(nil)
-		}
-		binding, ok := res.Data.(*core.SessionBinding)
-		if !ok {
-			return activeDossierMsg(nil)
-		}
-		return activeDossierMsg(binding)
-	}
-}
-
 // recallDossierCmd fetches the details of a specific dossier.
 func (m Model) recallDossierCmd(id string) tea.Cmd {
 	return func() tea.Msg {
@@ -319,27 +278,6 @@ func (m Model) recallDossierCmd(id string) tea.Cmd {
 			return recallDossierMsg{id: id, err: fmt.Errorf("invalid recall data type")}
 		}
 		return recallDossierMsg{
-			id:       id,
-			result:   recallRes,
-			warnings: res.Warnings,
-		}
-	}
-}
-
-func (m Model) switchActiveCmd(id string) tea.Cmd {
-	return func() tea.Msg {
-		res, err := m.svc.Switch(context.Background(), core.SwitchReq{
-			ID:        id,
-			SessionID: m.sessionID,
-		})
-		if err != nil {
-			return switchActiveMsg{id: id, err: err}
-		}
-		recallRes, ok := res.Data.(core.RecallResult)
-		if !ok {
-			return switchActiveMsg{id: id, err: fmt.Errorf("invalid switch data type")}
-		}
-		return switchActiveMsg{
 			id:       id,
 			result:   recallRes,
 			warnings: res.Warnings,
@@ -746,7 +684,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.currentView == ViewDetail && m.recallResult.Frontmatter.ID != "" {
 				return m, m.recallDossierCmd(m.recallResult.Frontmatter.ID)
 			}
-			return m, tea.Batch(m.listDossiersCmd(), m.getActiveDossierCmd())
+			return m, m.listDossiersCmd()
 		case "enter":
 			if m.currentView == ViewDashboard {
 				idx := m.table.Cursor()
@@ -756,12 +694,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.err = nil
 					return m, m.recallDossierCmd(dossierID)
 				}
-			}
-		case "a":
-			if t, ok := m.getTargetDossier(); ok {
-				m.loading = true
-				m.err = nil
-				return m, m.switchActiveCmd(t.id)
 			}
 		case "s":
 			if t, ok := m.getTargetDossier(); ok {
@@ -805,16 +737,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.items = msg
 		m.populateTableRows()
 
-	case activeDossierMsg:
-		if msg != nil {
-			m.activeID = msg.DossierID
-			m.updateActiveName()
-		} else {
-			m.activeID = ""
-			m.activeName = "None"
-		}
-		m.populateTableRows()
-
 	case recallDossierMsg:
 		m.loading = false
 		if msg.err != nil {
@@ -826,18 +748,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.SetContent(msg.result.DistilledState)
 			m.recalculateViewportLayout()
 			m.viewport.YOffset = 0
-		}
-
-	case switchActiveMsg:
-		m.loading = false
-		if msg.err != nil {
-			m.err = msg.err
-		} else {
-			m.activeID = msg.id
-			m.activeName = msg.result.Frontmatter.Name
-			m.warnings = msg.warnings
-			m.populateTableRows()
-			return m, tea.Batch(m.listDossiersCmd(), m.getActiveDossierCmd())
 		}
 
 	case linkResultMsg:
@@ -859,7 +769,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.currentView = ViewDashboard
 			m.err = nil
-			return m, tea.Batch(m.listDossiersCmd(), m.getActiveDossierCmd())
+			return m, m.listDossiersCmd()
 		}
 
 	case linkConfirmResultMsg:
@@ -869,7 +779,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 		} else {
 			m.err = nil
-			return m, tea.Batch(m.listDossiersCmd(), m.getActiveDossierCmd())
+			return m, m.listDossiersCmd()
 		}
 
 	case mergeResultMsg:
@@ -892,7 +802,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.currentView = ViewDashboard
 			m.err = nil
 			// Show success info
-			return m, tea.Batch(m.listDossiersCmd(), m.getActiveDossierCmd())
+			return m, m.listDossiersCmd()
 		}
 
 	case mutationResultMsg:
@@ -906,7 +816,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.currentView == ViewDetail {
 				return m, m.recallDossierCmd(msg.targetID)
 			} else {
-				return m, tea.Batch(m.listDossiersCmd(), m.getActiveDossierCmd())
+				return m, m.listDossiersCmd()
 			}
 		}
 
@@ -927,31 +837,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-// updateActiveName resolves the active name from items if available.
-func (m *Model) updateActiveName() {
-	if m.activeID == "" {
-		m.activeName = "None"
-		return
-	}
-	for _, item := range m.items {
-		if item.ID == m.activeID {
-			m.activeName = item.Name
-			return
-		}
-	}
-	m.activeName = m.activeID
-}
-
 // populateTableRows maps items into the table rows.
 func (m *Model) populateTableRows() {
-	m.updateActiveName()
 	rows := make([]table.Row, len(m.items))
 	for i, item := range m.items {
-		activeMarker := "  "
-		if item.ID == m.activeID {
-			activeMarker = "★ "
-		}
-
 		statusStr := item.Status
 		priorityStr := strconv.Itoa(item.PriorityScore)
 		stalenessStr := fmt.Sprintf("%dd ago", item.StalenessDays)
@@ -960,7 +849,6 @@ func (m *Model) populateTableRows() {
 		}
 
 		rows[i] = table.Row{
-			activeMarker,
 			item.Name,
 			statusStr,
 			priorityStr,
@@ -980,17 +868,16 @@ func (m *Model) recalculateTableLayout() {
 	m.table.SetHeight(tableHeight)
 
 	w := m.width
-	if w < 87 {
-		w = 87
+	if w < 85 {
+		w = 85
 	}
 
-	nextActionWidth := w - (2 + 22 + 10 + 8 + 10 + 10)
+	nextActionWidth := w - (22 + 10 + 8 + 10 + 10)
 	if nextActionWidth < 15 {
 		nextActionWidth = 15
 	}
 
 	m.table.SetColumns([]table.Column{
-		{Title: "A", Width: 2},
 		{Title: "Name", Width: 22},
 		{Title: "Status", Width: 10},
 		{Title: "Priority", Width: 8},
@@ -1238,14 +1125,7 @@ func (m Model) View() string {
 	var sb strings.Builder
 
 	// 1. Header Banner
-	var sessionDisplay string
-	if m.isRealSession {
-		sessionDisplay = m.sessionID
-	} else {
-		sessionDisplay = "(local default — no active Claude session)"
-	}
-	headerText := fmt.Sprintf(" DOSSIER TUI │ Session: %s │ Active: %s ", sessionDisplay, m.activeName)
-	sb.WriteString(titleStyle.Render(headerText))
+	sb.WriteString(titleStyle.Render(" DOSSIER TUI "))
 	sb.WriteString("\n")
 
 	// Check if there is a primary error message to show
@@ -1346,19 +1226,16 @@ func (m Model) View() string {
 	// 3. Footer / Help area
 	sb.WriteString("\n")
 	var footerParts []string
-	if !m.isRealSession {
-		footerParts = append(footerParts, warningStyle.Render("⚠ No active Claude session — 'active' binding uses local default bucket"))
-	}
 	if len(m.warnings) > 0 {
 		for _, w := range m.warnings {
 			footerParts = append(footerParts, warningStyle.Render(fmt.Sprintf("⚠ %s", w)))
 		}
 	}
 
-	keyHelp := "↑/↓: select • enter: detail • s: status • p: priority • n: next action • a: active • l: link • m: merge • q: quit"
+	keyHelp := "↑/↓: select • enter: detail • s: status • p: priority • n: next action • l: link • m: merge • q: quit"
 	switch m.currentView {
 	case ViewDetail:
-		keyHelp = "↑/↓/pgup/pgdn: scroll • s: status • p: priority • n: next action • a: active • esc: back • q: quit"
+		keyHelp = "↑/↓/pgup/pgdn: scroll • s: status • p: priority • n: next action • esc: back • q: quit"
 	case ViewStatusPicker:
 		keyHelp = "↑/↓: select status • enter: confirm • esc: cancel"
 	case ViewNextActionEditor:
@@ -1383,11 +1260,12 @@ func (m Model) View() string {
 
 // Run sets up the program, enters the alt-screen, and executes.
 //
-// NOTE (ADR 0003 / Divergence): MCP uses allowDefault=false and errors when no session resolves;
-// CLI/TUI use allowDefault=true and fall back to sess_default. This asymmetry is deliberate.
-func Run(ctx context.Context, svc *core.Service, sessionID string, isRealSession bool) error {
+// NOTE (ADR 0004): the TUI does not resolve or carry a session identity. It is a
+// read/edit viewer over the dossier store; the per-session "active" binding (Switch)
+// is intentionally not exposed here — see ADR 0004 and BUILD-DECISIONS B9.
+func Run(ctx context.Context, svc *core.Service) error {
 	p := tea.NewProgram(
-		NewModel(svc, sessionID, isRealSession),
+		NewModel(svc),
 		tea.WithAltScreen(),
 		tea.WithContext(ctx),
 	)
