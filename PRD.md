@@ -274,6 +274,23 @@ The token target governs the **Distilled State context loaded on recall**. The d
 
 Sharing & multi-user · web app · in-app LLM wrapper · automated ingestion (Slack/email/Drive OAuth) · native binary attachment storage · semantic search at scale · automated snapshot refresh. These layer onto the core; the core must stand alone first.
 
+### Pre-create binding confirmation
+
+**Problem.** A user starting a new session says "let's work on the auth refactor." The agent calls `dossier_promote` or `dossier create` and a new Dossier is born — even though one already exists for that exact topic, sitting at 80% completion. Over time, the library fragments: multiple thin Dossiers for the same thread, none with full context.
+
+**The fix.** Before creating a Dossier, search the existing library for likely matches (by title similarity, keyword overlap, or — in a later iteration — semantic embedding). If candidates exceed a confidence threshold, don't create yet. Instead, present the top matches to the user with enough signal to decide: title, status, priority, last-updated date, and the opening line of the Distilled State.
+
+The agent should frame this as a quick check, not a blocker:
+> "I found a couple of Dossiers that look related — *Auth refactor (active, last updated 3 days ago)* and *Login flow cleanup (blocked)*. Is one of these the right one to continue, or is this a genuinely separate thread?"
+
+If the user picks an existing Dossier, bind to it (`dossier_switch`) and resume. If none fit, proceed with creation — but with explicit confirmation so the user understands a new record is being opened.
+
+**Design notes for the implementation:**
+- v1 already runs a suggestion step before `dossier_promote` and returns `ambiguous_target` when confidence is high enough (SPEC §8.5, §7 `dossier promote`). This roadmap item is about promoting that internal guard into a deliberate, agent-presented UX flow rather than an API error code the caller has to handle.
+- The confidence threshold and result count (suggest: top 3) should be tunable. Too eager = constant interruptions; too conservative = the fragmentation problem remains. Start conservative and tighten based on dogfood.
+- "None of these match" is a valid answer that should unlock creation without a second confirmation loop.
+- Binding to an existing Dossier (not creating a new one) is the happy path when the topic already exists; the flow should feel like confirmation, not interrogation.
+
 ---
 
 ## 11. Build decisions (resolved)
