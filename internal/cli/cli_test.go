@@ -607,3 +607,24 @@ func TestCLIInstall(t *testing.T) {
 		t.Fatalf("idempotent install execution failed: %v", err)
 	}
 }
+
+func TestVersionCommand(t *testing.T) {
+	orig := Version
+	Version = "v9.9.9-test"
+	defer func() { Version = orig }()
+
+	// Both `dossier version` and `dossier --version` print the same line.
+	for _, args := range [][]string{{"version"}, {"--version"}} {
+		cmd := NewRootCmd()
+		// NewRootCmd reads Version at construction time, so build after setting it.
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetArgs(args)
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("%v execution failed: %v", args, err)
+		}
+		if got := strings.TrimSpace(out.String()); got != "dossier v9.9.9-test" {
+			t.Errorf("%v: expected %q, got %q", args, "dossier v9.9.9-test", got)
+		}
+	}
+}

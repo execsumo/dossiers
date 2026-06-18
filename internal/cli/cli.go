@@ -22,6 +22,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Version is the binary's version string, set by main from a -ldflags
+// "-X main.version=..." value at release build time. It is "dev" for
+// local/unstamped builds.
+var Version = "dev"
+
 var (
 	dossierHomeFlag   string
 	yesFlag           bool
@@ -37,8 +42,9 @@ var (
 // NewRootCmd constructs the root cobra command hierarchy.
 func NewRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
-		Use:   "dossier",
-		Short: "Dossier: durable memory layer for agent-driven work",
+		Use:     "dossier",
+		Short:   "Dossier: durable memory layer for agent-driven work",
+		Version: Version,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			homeDir := resolveHomeDir()
 			svc, err := wire(homeDir)
@@ -929,6 +935,16 @@ func NewRootCmd() *cobra.Command {
 		},
 	}
 
+	versionCmd := &cobra.Command{
+		Use:   "version",
+		Short: "Print the Dossier version",
+		Args:  cobra.NoArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Fprintf(cmd.OutOrStdout(), "dossier %s\n", Version)
+		},
+	}
+
+	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(installCmd)
 	rootCmd.AddCommand(doctorCmd)
@@ -950,6 +966,9 @@ func NewRootCmd() *cobra.Command {
 	rootCmd.AddCommand(priorityCmd)
 	rootCmd.AddCommand(hookCmd)
 	rootCmd.AddCommand(tuiCmd)
+
+	// Match `dossier version` output for the built-in `--version` flag.
+	rootCmd.SetVersionTemplate("dossier {{.Version}}\n")
 
 	return rootCmd
 }
