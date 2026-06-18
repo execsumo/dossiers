@@ -322,6 +322,30 @@ func (s *FSStore) WriteArtifact(dossierID string, a *core.Artifact) error {
 		return err
 	}
 
+	lock, err := Lock(filepath.Join(dossierDir, ".lock"))
+	if err != nil {
+		return fmt.Errorf("failed to acquire dossier lock: %w", err)
+	}
+	defer lock.Unlock()
+
+	dossierPath := filepath.Join(dossierDir, "dossier.md")
+	if data, err := os.ReadFile(dossierPath); err == nil {
+		if currFM, currBody, parseErr := ParseDossierFile(string(data)); parseErr == nil {
+			currentArtifacts, _ := s.listArtifactsInternal(currFM.ID, dossierDir)
+			currentRevision := core.CalculateRevision(*currFM, currBody, currentArtifacts)
+			historyDir := filepath.Join(dossierDir, "history")
+			if err := os.MkdirAll(historyDir, 0755); err != nil {
+				return err
+			}
+			historyPath := filepath.Join(historyDir, fmt.Sprintf("%s.md", currentRevision))
+			if _, statErr := os.Stat(historyPath); os.IsNotExist(statErr) {
+				if err := os.WriteFile(historyPath, data, 0644); err != nil {
+					return fmt.Errorf("failed to save history archive before artifact write: %w", err)
+				}
+			}
+		}
+	}
+
 	if a.ID == "" {
 		a.ID, err = GenerateID("art_")
 		if err != nil {

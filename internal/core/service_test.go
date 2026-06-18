@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -38,7 +39,10 @@ func (m *mockClock) Now() time.Time {
 type localFakeStore struct {
 	dossiers  map[string]*Dossier
 	revisions map[string]Revision
+	artifacts map[string][]Artifact
 	audits    map[string][]AuditEvent
+	sessions  map[string]*SessionBinding
+	conflicts map[string]*Conflict
 	history   map[Revision]*Dossier
 }
 
@@ -46,7 +50,10 @@ func newLocalFakeStore() *localFakeStore {
 	return &localFakeStore{
 		dossiers:  make(map[string]*Dossier),
 		revisions: make(map[string]Revision),
+		artifacts: make(map[string][]Artifact),
 		audits:    make(map[string][]AuditEvent),
+		sessions:  make(map[string]*SessionBinding),
+		conflicts: make(map[string]*Conflict),
 		history:   make(map[Revision]*Dossier),
 	}
 }
@@ -104,25 +111,74 @@ func (f *localFakeStore) Write(d *Dossier, base Revision) (Revision, error) {
 	}
 
 	f.dossiers[d.Frontmatter.ID] = d
-	rev := CalculateRevision(d.Frontmatter, d.DistilledState.Body, nil)
+	rev := CalculateRevision(d.Frontmatter, d.DistilledState.Body, f.artifacts[d.Frontmatter.ID])
 	f.revisions[d.Frontmatter.ID] = rev
 	return rev, nil
 }
-func (f *localFakeStore) WriteArtifact(id string, a *Artifact) error              { return nil }
-func (f *localFakeStore) ReadArtifact(id string, artID string) (*Artifact, error) { return nil, nil }
-func (f *localFakeStore) ListArtifacts(id string) ([]Artifact, error)             { return nil, nil }
+func (f *localFakeStore) WriteArtifact(id string, a *Artifact) error {
+	if a.ID == "" {
+		a.ID = "art_fake_" + string(rune('a'+len(f.artifacts[id])))
+	}
+	a.DossierID = id
+	f.artifacts[id] = append(f.artifacts[id], *a)
+	if d, ok := f.dossiers[id]; ok {
+		f.revisions[id] = CalculateRevision(d.Frontmatter, d.DistilledState.Body, f.artifacts[id])
+	}
+	return nil
+}
+func (f *localFakeStore) ReadArtifact(id string, artID string) (*Artifact, error) {
+	for _, a := range f.artifacts[id] {
+		if a.ID == artID {
+			cp := a
+			return &cp, nil
+		}
+	}
+	return nil, NewError(ErrNotFound, "artifact not found")
+}
+func (f *localFakeStore) ListArtifacts(id string) ([]Artifact, error) {
+	return append([]Artifact(nil), f.artifacts[id]...), nil
+}
 func (f *localFakeStore) AppendAudit(id string, e AuditEvent) error {
 	f.audits[id] = append(f.audits[id], e)
 	return nil
 }
-func (f *localFakeStore) ReadAuditLog(id string) ([]AuditEvent, error)         { return f.audits[id], nil }
-func (f *localFakeStore) SaveSessionBinding(b *SessionBinding) error           { return nil }
-func (f *localFakeStore) GetSessionBinding(id string) (*SessionBinding, error) { return nil, nil }
-func (f *localFakeStore) ClearSessionBinding(id string) error                  { return nil }
-func (f *localFakeStore) WriteConflict(c *Conflict) error                      { return nil }
-func (f *localFakeStore) ReadConflict(id string) (*Conflict, error)            { return nil, nil }
-func (f *localFakeStore) ListConflicts() ([]Conflict, error)                   { return nil, nil }
-func (f *localFakeStore) WriteLibraryContext(data LibraryData) error           { return nil }
+func (f *localFakeStore) ReadAuditLog(id string) ([]AuditEvent, error) { return f.audits[id], nil }
+func (f *localFakeStore) SaveSessionBinding(b *SessionBinding) error {
+	cp := *b
+	f.sessions[b.SessionBindingID] = &cp
+	return nil
+}
+func (f *localFakeStore) GetSessionBinding(id string) (*SessionBinding, error) {
+	b, ok := f.sessions[id]
+	if !ok {
+		return nil, NewError(ErrNotFound, "session binding not found")
+	}
+	cp := *b
+	return &cp, nil
+}
+func (f *localFakeStore) ClearSessionBinding(id string) error {
+	delete(f.sessions, id)
+	return nil
+}
+func (f *localFakeStore) WriteConflict(c *Conflict) error {
+	f.conflicts[c.ID] = c
+	return nil
+}
+func (f *localFakeStore) ReadConflict(id string) (*Conflict, error) {
+	c, ok := f.conflicts[id]
+	if !ok {
+		return nil, NewError(ErrNotFound, "conflict not found")
+	}
+	return c, nil
+}
+func (f *localFakeStore) ListConflicts() ([]Conflict, error) {
+	var out []Conflict
+	for _, c := range f.conflicts {
+		out = append(out, *c)
+	}
+	return out, nil
+}
+func (f *localFakeStore) WriteLibraryContext(data LibraryData) error { return nil }
 
 func TestServiceListAndRecall(t *testing.T) {
 	fakeStore := newLocalFakeStore()
@@ -194,4 +250,207 @@ func TestServiceListAndRecall(t *testing.T) {
 	if d.Frontmatter.Status != StatusArchived {
 		t.Errorf("expected status to be archived, got %q", d.Frontmatter.Status)
 	}
+}
+
+func TestSaveReturnsRevisionIncludingArtifacts(t *testing.T) {
+	fakeStore := newLocalFakeStore()
+	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{now: time.Date(2026, 6, 14, 12, 0, 0, 0, time.UTC)}, Config{TokenTarget: 100})
+	ctx := context.Background()
+
+	createRes, err := svc.Save(ctx, SaveReq{
+		DistilledStateMarkdown: "# Artifact Revision\n\n## Situation\nCurrent state [src:art_evidence].",
+		FrontmatterUpdates: map[string]any{
+			"name":       "Artifact Revision",
+			"status":     "active",
+			"importance": "medium",
+			"urgency":    "medium",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+
+	updateRes, err := svc.Save(ctx, SaveReq{
+		ID:           "dos_fake_id",
+		BaseRevision: createRes.Data.(Revision),
+		Artifacts: []Artifact{{
+			ID:            "art_evidence",
+			Type:          ArtifactTypeSourceSnapshot,
+			Title:         "Evidence",
+			Provenance:    Provenance{Origin: "unit test"},
+			ContentFormat: ContentFormatText,
+			Content:       "Artifact content",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("save with artifact failed: %v", err)
+	}
+
+	_, readRev, err := fakeStore.Read("dos_fake_id")
+	if err != nil {
+		t.Fatalf("read failed: %v", err)
+	}
+	if updateRes.Data.(Revision) != readRev {
+		t.Fatalf("expected returned revision %q to include artifacts and match read revision %q", updateRes.Data.(Revision), readRev)
+	}
+}
+
+func TestSessionEndCapturesTranscriptWithoutDistilledState(t *testing.T) {
+	fakeStore := newLocalFakeStore()
+	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{now: time.Date(2026, 6, 14, 12, 0, 0, 0, time.UTC)}, Config{TokenTarget: 100})
+	ctx := context.Background()
+
+	createRes, err := svc.Save(ctx, SaveReq{
+		DistilledStateMarkdown: "# Hook Backstop\n\n## Situation\nOriginal state.",
+		FrontmatterUpdates: map[string]any{
+			"name":       "Hook Backstop",
+			"status":     "active",
+			"importance": "medium",
+			"urgency":    "medium",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	initialRev := createRes.Data.(Revision)
+	if err := fakeStore.SaveSessionBinding(&SessionBinding{
+		SessionBindingID: "sess_test",
+		Harness:          "claude-code",
+		DossierID:        "dos_fake_id",
+		LastSeenRevision: string(initialRev),
+	}); err != nil {
+		t.Fatalf("binding failed: %v", err)
+	}
+
+	if err := svc.SessionEnd(ctx, "sess_test", "", "transcript payload"); err != nil {
+		t.Fatalf("SessionEnd failed: %v", err)
+	}
+
+	d, revAfter, err := fakeStore.Read("dos_fake_id")
+	if err != nil {
+		t.Fatalf("read failed: %v", err)
+	}
+	if d.DistilledState.Body != "# Hook Backstop\n\n## Situation\nOriginal state." {
+		t.Fatalf("distilled state should be unchanged, got %q", d.DistilledState.Body)
+	}
+	if revAfter == initialRev {
+		t.Fatalf("expected transcript artifact to advance revision")
+	}
+	if len(fakeStore.artifacts["dos_fake_id"]) != 1 {
+		t.Fatalf("expected one transcript artifact, got %d", len(fakeStore.artifacts["dos_fake_id"]))
+	}
+	binding, err := fakeStore.GetSessionBinding("sess_test")
+	if err != nil {
+		t.Fatalf("binding read failed: %v", err)
+	}
+	if binding.LastSeenRevision != string(revAfter) {
+		t.Fatalf("expected binding revision %q, got %q", revAfter, binding.LastSeenRevision)
+	}
+	var sawNoDistilledAudit bool
+	for _, event := range fakeStore.audits["dos_fake_id"] {
+		if strings.Contains(event.Message, "without distilled_state payload") {
+			sawNoDistilledAudit = true
+		}
+	}
+	if !sawNoDistilledAudit {
+		t.Fatalf("expected audit entry for missing distilled_state payload")
+	}
+}
+
+func TestDoctorReportsProvenanceAndConflictIssues(t *testing.T) {
+	now := time.Date(2026, 6, 14, 12, 0, 0, 0, time.UTC)
+	fakeStore := newLocalFakeStore()
+	fakeStore.dossiers["dos_bad"] = &Dossier{
+		Frontmatter: Frontmatter{
+			ID:            "dos_bad",
+			Name:          "Bad Dossier",
+			Slug:          "bad-dossier",
+			CreatedAt:     now,
+			UpdatedAt:     now,
+			LastTouchedAt: now,
+			Status:        StatusActive,
+			Importance:    ImportanceMedium,
+			Urgency:       UrgencyMedium,
+		},
+		DistilledState: DistilledState{Body: "# Bad Dossier\n\n## Situation\nA material claim without provenance.\nAnother claim [src:art_missing]."},
+	}
+	fakeStore.revisions["dos_bad"] = CalculateRevision(fakeStore.dossiers["dos_bad"].Frontmatter, fakeStore.dossiers["dos_bad"].DistilledState.Body, nil)
+	fakeStore.artifacts["dos_bad"] = []Artifact{{
+		ID:            "art_empty_origin",
+		DossierID:     "dos_bad",
+		Type:          ArtifactTypeSourceSnapshot,
+		Title:         "No provenance origin",
+		CapturedAt:    now,
+		RefreshedAt:   now,
+		ContentFormat: ContentFormatText,
+		Content:       "source",
+	}}
+	fakeStore.conflicts["conf_bad"] = &Conflict{ID: "conf_bad", DossierID: "dos_bad", Kind: "merge_conflict", TS: now}
+
+	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{now: now}, Config{})
+	res, err := svc.Doctor(context.Background())
+	if err != nil {
+		t.Fatalf("Doctor failed: %v", err)
+	}
+	if res.OK {
+		t.Fatalf("expected doctor to report issues")
+	}
+	joined := warningsText(res.Warnings)
+	for _, want := range []string{"missing provenance", "references missing artifact art_missing", "missing provenance.origin", "Unresolved conflict conf_bad"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("expected doctor warning containing %q, got:\n%s", want, joined)
+		}
+	}
+}
+
+func TestDoctorHealthyWithValidProvenance(t *testing.T) {
+	now := time.Date(2026, 6, 14, 12, 0, 0, 0, time.UTC)
+	fakeStore := newLocalFakeStore()
+	fakeStore.dossiers["dos_good"] = &Dossier{
+		Frontmatter: Frontmatter{
+			ID:            "dos_good",
+			Name:          "Good Dossier",
+			Slug:          "good-dossier",
+			CreatedAt:     now,
+			UpdatedAt:     now,
+			LastTouchedAt: now,
+			Status:        StatusActive,
+			Importance:    ImportanceMedium,
+			Urgency:       UrgencyMedium,
+		},
+		DistilledState: DistilledState{Body: "# Good Dossier\n\n## Situation\nA supported material claim. [src:art_good]"},
+	}
+	fakeStore.artifacts["dos_good"] = []Artifact{{
+		ID:            "art_good",
+		DossierID:     "dos_good",
+		Type:          ArtifactTypeSourceSnapshot,
+		Title:         "Evidence",
+		CapturedAt:    now,
+		RefreshedAt:   now,
+		Provenance:    Provenance{Origin: "unit test"},
+		ContentFormat: ContentFormatText,
+		Content:       "source",
+	}}
+	fakeStore.revisions["dos_good"] = CalculateRevision(fakeStore.dossiers["dos_good"].Frontmatter, fakeStore.dossiers["dos_good"].DistilledState.Body, fakeStore.artifacts["dos_good"])
+
+	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{now: now}, Config{})
+	res, err := svc.Doctor(context.Background())
+	if err != nil {
+		t.Fatalf("Doctor failed: %v", err)
+	}
+	if !res.OK {
+		t.Fatalf("expected doctor healthy, got warnings:\n%s", warningsText(res.Warnings))
+	}
+	report := res.Data.(DoctorReport)
+	if report.DossiersChecked != 1 || report.ArtifactsChecked != 1 || report.AuditLogsChecked != 1 {
+		t.Fatalf("unexpected report counts: %+v", report)
+	}
+}
+
+func warningsText(warnings []Warning) string {
+	var parts []string
+	for _, warning := range warnings {
+		parts = append(parts, string(warning))
+	}
+	return strings.Join(parts, "\n")
 }

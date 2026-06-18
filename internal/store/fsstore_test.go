@@ -200,6 +200,68 @@ func TestFSStoreArtifacts(t *testing.T) {
 	}
 }
 
+func TestFSStoreArtifactWriteAdvancesRevisionAndPreservesHistory(t *testing.T) {
+	tempHome, err := os.MkdirTemp("", "dossier-test-artifact-revision-*")
+	if err != nil {
+		t.Fatalf("failed to create temp home: %v", err)
+	}
+	defer os.RemoveAll(tempHome)
+
+	store := NewFSStore(tempHome)
+	if err := store.Init(); err != nil {
+		t.Fatalf("failed to init store: %v", err)
+	}
+
+	now := time.Now().Truncate(time.Second)
+	dossier := &core.Dossier{
+		Frontmatter: core.Frontmatter{
+			ID:            "dos_art_rev",
+			Name:          "Artifact Revision",
+			Slug:          "artifact-revision",
+			CreatedAt:     now,
+			UpdatedAt:     now,
+			LastTouchedAt: now,
+			Status:        core.StatusActive,
+			Importance:    core.ImportanceMedium,
+			Urgency:       core.UrgencyMedium,
+		},
+		DistilledState: core.DistilledState{Body: "# Artifact Revision\n\n## Situation\nBody before artifact."},
+	}
+
+	revBefore, err := store.Write(dossier, "")
+	if err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+
+	art := &core.Artifact{
+		ID:            "art_revision",
+		Type:          core.ArtifactTypeSourceSnapshot,
+		Title:         "Revision evidence",
+		Provenance:    core.Provenance{Origin: "unit test"},
+		ContentFormat: core.ContentFormatText,
+		Content:       "evidence",
+	}
+	if err := store.WriteArtifact(dossier.Frontmatter.ID, art); err != nil {
+		t.Fatalf("WriteArtifact failed: %v", err)
+	}
+
+	_, revAfter, err := store.Read(dossier.Frontmatter.ID)
+	if err != nil {
+		t.Fatalf("read failed: %v", err)
+	}
+	if revAfter == revBefore {
+		t.Fatalf("expected artifact write to advance revision")
+	}
+
+	historical, err := store.ReadRevision(dossier.Frontmatter.ID, revBefore)
+	if err != nil {
+		t.Fatalf("expected pre-artifact revision to be readable from history: %v", err)
+	}
+	if historical.DistilledState.Body != dossier.DistilledState.Body {
+		t.Fatalf("unexpected historical body: %q", historical.DistilledState.Body)
+	}
+}
+
 func TestFSStoreAuditLog(t *testing.T) {
 	tempHome, err := os.MkdirTemp("", "dossier-test-audit-*")
 	if err != nil {

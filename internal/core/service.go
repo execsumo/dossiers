@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -47,6 +48,15 @@ type ListItem struct {
 	DueDate       string   `json:"due_date,omitempty"`
 	StalenessDays int      `json:"staleness_days"`
 	PriorityScore int      `json:"priority_score"`
+}
+
+// DoctorReport summarizes integrity checks run by Doctor.
+type DoctorReport struct {
+	DossiersChecked  int      `json:"dossiers_checked"`
+	ArtifactsChecked int      `json:"artifacts_checked"`
+	AuditLogsChecked int      `json:"audit_logs_checked"`
+	ConflictsFound   int      `json:"conflicts_found"`
+	Issues           []string `json:"issues,omitempty"`
 }
 
 // NewService instantiates the core orchestration service.
@@ -130,24 +140,120 @@ func displayHarnessName(name string) string {
 
 // Doctor validates store integrity and configuration correctness.
 func (s *Service) Doctor(ctx context.Context) (Result, error) {
-	// For Milestone 1 baseline, we run check checks
-	warnings := []Warning{}
-
-	// Try reading config or checking directories
 	if s.store == nil {
 		return Result{OK: false}, NewError(ErrInternal, "store not configured")
 	}
 
-	// For baseline, list dossiers to make sure it doesn't fail
-	_, err := s.store.List("all")
+	report := DoctorReport{}
+	var warnings []Warning
+	addIssue := func(format string, args ...any) {
+		msg := fmt.Sprintf(format, args...)
+		report.Issues = append(report.Issues, msg)
+		warnings = append(warnings, Warning(msg))
+	}
+
+	fms, err := s.store.List("all")
 	if err != nil {
-		warnings = append(warnings, Warning(fmt.Sprintf("Failed to list dossiers: %v", err)))
+		addIssue("Failed to list dossiers: %v", err)
+		return Result{OK: false, Data: report, Warnings: warnings}, nil
+	}
+
+	for _, fm := range fms {
+		report.DossiersChecked++
+		if err := fm.Validate(); err != nil {
+			addIssue("Dossier %s has invalid frontmatter: %v", fm.ID, err)
+		}
+
+		d, _, err := s.store.Read(fm.ID)
+		if err != nil {
+			addIssue("Dossier %s could not be read: %v", fm.ID, err)
+			continue
+		}
+
+		artifacts, err := s.store.ListArtifacts(fm.ID)
+		if err != nil {
+			addIssue("Dossier %s artifacts could not be listed: %v", fm.ID, err)
+		}
+		for _, art := range artifacts {
+			report.ArtifactsChecked++
+			fullArt, err := s.store.ReadArtifact(fm.ID, art.ID)
+			if err != nil {
+				addIssue("Dossier %s artifact %s could not be read: %v", fm.ID, art.ID, err)
+				continue
+			}
+			if err := fullArt.Validate(); err != nil {
+				addIssue("Dossier %s artifact %s is invalid: %v", fm.ID, art.ID, err)
+			}
+			if strings.TrimSpace(fullArt.Provenance.Origin) == "" {
+				addIssue("Dossier %s artifact %s is missing provenance.origin", fm.ID, art.ID)
+			}
+		}
+
+		for _, issue := range validateDistilledStateProvenance(d.DistilledState.Body, fm.ID, func(artifactID string) bool {
+			_, err := s.store.ReadArtifact(fm.ID, artifactID)
+			return err == nil
+		}) {
+			addIssue("%s", issue)
+		}
+
+		if _, err := s.store.ReadAuditLog(fm.ID); err != nil {
+			addIssue("Dossier %s audit log is not readable: %v", fm.ID, err)
+		} else {
+			report.AuditLogsChecked++
+		}
+	}
+
+	conflicts, err := s.store.ListConflicts()
+	if err != nil {
+		addIssue("Conflicts could not be listed: %v", err)
+	} else {
+		report.ConflictsFound = len(conflicts)
+		for _, c := range conflicts {
+			addIssue("Unresolved conflict %s for dossier %s", c.ID, c.DossierID)
+		}
 	}
 
 	return Result{
-		OK:       err == nil,
+		OK:       len(warnings) == 0,
+		Data:     report,
 		Warnings: warnings,
 	}, nil
+}
+
+var provenanceRefRE = regexp.MustCompile(`\[src:([A-Za-z0-9_]+)(?:#[^\]]+)?\]`)
+
+func validateDistilledStateProvenance(body string, dossierID string, artifactExists func(string) bool) []string {
+	var issues []string
+	lines := strings.Split(body, "\n")
+	inFence := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			inFence = !inFence
+			continue
+		}
+		if inFence || trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "---") {
+			continue
+		}
+		if strings.HasPrefix(trimmed, ">") {
+			continue
+		}
+		if strings.Contains(trimmed, "[src:") && !provenanceRefRE.MatchString(trimmed) {
+			issues = append(issues, fmt.Sprintf("Dossier %s line %d has malformed provenance reference", dossierID, i+1))
+			continue
+		}
+		refs := provenanceRefRE.FindAllStringSubmatch(trimmed, -1)
+		if len(refs) == 0 {
+			issues = append(issues, fmt.Sprintf("Dossier %s line %d is missing provenance", dossierID, i+1))
+			continue
+		}
+		for _, ref := range refs {
+			if len(ref) < 2 || !artifactExists(ref[1]) {
+				issues = append(issues, fmt.Sprintf("Dossier %s line %d references missing artifact %s", dossierID, i+1, ref[1]))
+			}
+		}
+	}
+	return issues
 }
 
 // Stubs for future milestones
@@ -219,10 +325,10 @@ func (s *Service) Promote(ctx context.Context, req PromoteReq) (Result, error) {
 	var warnings []Warning
 	if req.Content != "" && newID != "" {
 		art := Artifact{
-			ID:            "art_transcript",
 			DossierID:     newID,
 			Type:          ArtifactTypeTranscript,
 			Title:         "Captured Session Transcript",
+			Provenance:    Provenance{Origin: "promote session content"},
 			ContentFormat: ContentFormatText,
 			Content:       req.Content,
 			CapturedAt:    now,
@@ -550,10 +656,17 @@ func (s *Service) Save(ctx context.Context, req SaveReq) (Result, error) {
 	var addedArtifactIDs []string
 	for _, art := range req.Artifacts {
 		art.DossierID = d.Frontmatter.ID
-		err := s.store.WriteArtifact(d.Frontmatter.ID, &art)
-		if err == nil {
-			addedArtifactIDs = append(addedArtifactIDs, art.ID)
+		if err := s.store.WriteArtifact(d.Frontmatter.ID, &art); err != nil {
+			return Result{}, err
 		}
+		addedArtifactIDs = append(addedArtifactIDs, art.ID)
+	}
+	if len(addedArtifactIDs) > 0 {
+		_, refreshedRev, err := s.store.Read(d.Frontmatter.ID)
+		if err != nil {
+			return Result{}, err
+		}
+		newRev = refreshedRev
 	}
 
 	event := AuditEvent{
@@ -639,6 +752,7 @@ func (s *Service) Link(ctx context.Context, req LinkReq) (Result, error) {
 		DossierID:     d.Frontmatter.ID,
 		Type:          ArtifactTypeSourceSnapshot,
 		Title:         title,
+		Provenance:    Provenance{Origin: "linked session content"},
 		ContentFormat: ContentFormatText,
 		Content:       req.Content,
 		CapturedAt:    now,
@@ -1314,24 +1428,27 @@ func (s *Service) SessionEnd(ctx context.Context, sessionID string, distilledSta
 	}
 
 	now := s.clock.Now()
+	finalRevision := Revision(binding.LastSeenRevision)
 
 	if distilledState != "" {
-		_, err = s.Save(ctx, SaveReq{
+		saveRes, err := s.Save(ctx, SaveReq{
 			ID:                     binding.DossierID,
 			BaseRevision:           Revision(binding.LastSeenRevision),
 			DistilledStateMarkdown: distilledState,
+			SessionID:              sessionID,
 		})
 		if err != nil {
 			return err
 		}
+		finalRevision = saveRes.Data.(Revision)
 	}
 
 	if transcript != "" {
 		art := Artifact{
-			ID:            "art_transcript",
 			DossierID:     binding.DossierID,
 			Type:          ArtifactTypeTranscript,
 			Title:         "Session End Transcript",
+			Provenance:    Provenance{Origin: "session-end hook transcript", Harness: binding.Harness},
 			ContentFormat: ContentFormatText,
 			Content:       transcript,
 			CapturedAt:    now,
@@ -1340,14 +1457,43 @@ func (s *Service) SessionEnd(ctx context.Context, sessionID string, distilledSta
 		if err := s.store.WriteArtifact(binding.DossierID, &art); err != nil {
 			return err
 		}
+		_, refreshedRev, err := s.store.Read(binding.DossierID)
+		if err != nil {
+			return err
+		}
 		_ = s.store.AppendAudit(binding.DossierID, AuditEvent{
 			TS:             now,
 			Event:          AuditEventSave,
 			DossierID:      binding.DossierID,
-			BeforeRevision: binding.LastSeenRevision,
-			AfterRevision:  binding.LastSeenRevision,
+			SessionID:      sessionID,
+			BeforeRevision: string(finalRevision),
+			AfterRevision:  string(refreshedRev),
 			ArtifactsAdded: []string{art.ID},
 		})
+		finalRevision = refreshedRev
+	} else {
+		_ = s.store.AppendAudit(binding.DossierID, AuditEvent{
+			TS:        now,
+			Event:     AuditEventTranscriptCaptureUnavailable,
+			DossierID: binding.DossierID,
+			SessionID: sessionID,
+			Message:   "Session boundary reached without transcript payload; no transcript artifact was captured.",
+		})
+	}
+
+	if distilledState == "" {
+		_ = s.store.AppendAudit(binding.DossierID, AuditEvent{
+			TS:        now,
+			Event:     AuditEventSave,
+			DossierID: binding.DossierID,
+			SessionID: sessionID,
+			Message:   "Session boundary reached without distilled_state payload; retained available artifacts and left Distilled State unchanged.",
+		})
+	}
+
+	if finalRevision != "" && string(finalRevision) != binding.LastSeenRevision {
+		binding.LastSeenRevision = string(finalRevision)
+		_ = s.store.SaveSessionBinding(binding)
 	}
 
 	return nil

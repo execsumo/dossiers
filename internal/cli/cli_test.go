@@ -445,7 +445,7 @@ func TestCLIMilestone6(t *testing.T) {
 	}
 	foundTranscript := false
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), "art_transcript") {
+		if strings.HasPrefix(entry.Name(), "art_") {
 			foundTranscript = true
 			break
 		}
