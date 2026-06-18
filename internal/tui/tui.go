@@ -3,6 +3,9 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -710,6 +713,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.startEditNextAction(t)
 				return m, nil
 			}
+		case "e":
+			if m.currentView == ViewDetail && m.recallResult.Frontmatter.ID != "" {
+				res, err := m.svc.Path(context.Background(), core.PathReq{ID: m.recallResult.Frontmatter.ID})
+				if err != nil {
+					m.err = err
+					return m, nil
+				}
+				dossierPath := filepath.Join(res.Data.(string), "dossier.md")
+				editor := os.Getenv("EDITOR")
+				if editor == "" {
+					editor = "nano"
+				}
+				cmd := exec.Command(editor, dossierPath)
+				return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+					return editorFinishedMsg{err: err, id: m.recallResult.Frontmatter.ID}
+				})
+			}
 		case "l":
 			if m.currentView == ViewDashboard {
 				m.startLinkInput()
@@ -820,6 +840,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case editorFinishedMsg:
+		if msg.err != nil {
+			m.err = msg.err
+			return m, nil
+		}
+		m.loading = true
+		return m, m.recallDossierCmd(msg.id)
+
 	case errMsg:
 		m.loading = false
 		m.err = msg
@@ -835,6 +863,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+type editorFinishedMsg struct {
+	err error
+	id  string
 }
 
 // populateTableRows maps items into the table rows.
@@ -1152,26 +1185,61 @@ func (m Model) View() string {
 		fm := m.recallResult.Frontmatter
 		score := core.CalculatePriorityScore(fm, time.Now())
 
-		// Metadata Block
-		sb.WriteString(metaLabelStyle.Render(" Dossier: "))
-		sb.WriteString(metaValueStyle.Render(fmt.Sprintf("%s (%s)\n", fm.Name, fm.ID)))
-
-		sb.WriteString(metaLabelStyle.Render(" Status:  "))
-		sb.WriteString(metaValueStyle.Render(fmt.Sprintf("%-15s", fm.Status)))
-		sb.WriteString(metaLabelStyle.Render(" Priority: "))
-		sb.WriteString(metaValueStyle.Render(fmt.Sprintf("Score %d (Importance: %s, Urgency: %s)\n", score, fm.Importance, fm.Urgency)))
-
 		targetTokens := fm.TokenTarget
 		if targetTokens == 0 {
 			targetTokens = 100000
 		}
-		sb.WriteString(metaLabelStyle.Render(" Tokens:  "))
-		sb.WriteString(metaValueStyle.Render(fmt.Sprintf("%d / %d", m.recallResult.TokenEstimate, targetTokens)))
-		sb.WriteString(metaLabelStyle.Render("       Revision: "))
-		sb.WriteString(metaValueStyle.Render(fmt.Sprintf("%s\n", m.recallResult.Revision)))
 
-		sb.WriteString(metaLabelStyle.Render(" Next:    "))
-		sb.WriteString(metaValueStyle.Render(fmt.Sprintf("%s\n", fm.NextAction)))
+		lblStyle := metaLabelStyle.Copy().
+			Width(10).
+			Align(lipgloss.Right).
+			MarginRight(1)
+
+		valWidth := m.width - 12
+		if valWidth < 10 {
+			valWidth = 10
+		}
+		valStyle := metaValueStyle.Copy().Width(valWidth)
+
+		renderRow := func(label, value string) string {
+			return lipgloss.JoinHorizontal(lipgloss.Top,
+				lblStyle.Render(label),
+				valStyle.Render(value),
+			) + "\n"
+		}
+
+		col1ValWidth := 20
+		col1ValStyle := metaValueStyle.Copy().Width(col1ValWidth)
+
+		col2ValWidth := m.width - 12 - 11 - col1ValWidth
+		if col2ValWidth < 10 {
+			col2ValWidth = 10
+		}
+		col2ValStyle := metaValueStyle.Copy().Width(col2ValWidth)
+
+		renderTwoCols := func(l1, v1, l2, v2 string) string {
+			if m.width < 90 {
+				return renderRow(l1, v1) + renderRow(l2, v2)
+			}
+			col1 := lipgloss.JoinHorizontal(lipgloss.Top,
+				lblStyle.Render(l1),
+				col1ValStyle.Render(v1),
+			)
+			col2 := lipgloss.JoinHorizontal(lipgloss.Top,
+				lblStyle.Render(l2),
+				col2ValStyle.Render(v2),
+			)
+			return lipgloss.JoinHorizontal(lipgloss.Top, col1, col2) + "\n"
+		}
+
+		// Metadata Block
+		sb.WriteString(renderRow("Dossier:", fm.Name))
+		sb.WriteString(renderTwoCols(
+			"Status:", string(fm.Status),
+			"Priority:", fmt.Sprintf("Score %d (Importance: %s, Urgency: %s)", score, fm.Importance, fm.Urgency),
+		))
+		sb.WriteString(renderRow("Tokens:", fmt.Sprintf("%d / %d", m.recallResult.TokenEstimate, targetTokens)))
+		sb.WriteString(renderRow("Next:", fm.NextAction))
 
 		sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(strings.Repeat("─", m.width)))
 		sb.WriteString("\n")
