@@ -451,11 +451,22 @@ func (s *Server) handleToolCall(ctx context.Context, id any, name string, args j
 			Code:    code,
 			Message: msg,
 		}
+		// For ambiguous_target, include candidate data and next_actions so the agent
+		// can present the disambiguation to the user without an extra round-trip.
+		if code == ErrCodeAmbiguousTarget {
+			env.Data = res.Data
+			for _, na := range res.NextActions {
+				env.NextActions = append(env.NextActions, string(na))
+			}
+		}
 	} else {
 		env.OK = res.OK
 		env.Data = res.Data
 		for _, w := range res.Warnings {
 			env.Warnings = append(env.Warnings, string(w))
+		}
+		for _, na := range res.NextActions {
+			env.NextActions = append(env.NextActions, string(na))
 		}
 	}
 

@@ -292,9 +292,17 @@ func (s *Service) Promote(ctx context.Context, req PromoteReq) (Result, error) {
 				sort.Slice(candidates, func(i, j int) bool {
 					return candidates[i].Score > candidates[j].Score
 				})
+				if len(candidates) > 3 {
+					candidates = candidates[:3]
+				}
 				return Result{
 					OK:   false,
 					Data: candidates,
+					NextActions: []NextAction{
+						`Present the candidates to the user: "I found Dossiers that look related — [for each: Name (status, N days since last update)]. Is one of these the right one to continue, or is this a separate thread?"`,
+						`If the user picks one: call dossier_switch with its slug to bind it, then dossier_recall to load its state.`,
+						`If the user confirms this is a new topic: call dossier_promote again with force=true.`,
+					},
 				}, NewError(ErrAmbiguousTarget, "Multiple likely Dossiers match this promote request.")
 			}
 		}
@@ -1414,7 +1422,11 @@ func (s *Service) SessionStart(ctx context.Context, sessionID string) (string, e
 			sb.WriteString("\n")
 		}
 	} else {
-		sb.WriteString("No active dossier bound to this session. Please select an existing dossier to continue or create a new one.\n")
+		sb.WriteString("No active Dossier is bound to this session.\n\n")
+		sb.WriteString("When the user names a topic to work on, check the Open Dossiers list above before creating anything:\n")
+		sb.WriteString("1. If a close match exists, surface it: \"I see [Name] ([status], last touched N days ago) — is that the one to continue, or is this a new thread?\"\n")
+		sb.WriteString("2. If the user confirms an existing one, call dossier_switch with its slug.\n")
+		sb.WriteString("3. If none match or the user says it's new, call dossier_promote — it will run a similarity check and flag any missed candidates before creating.\n")
 	}
 
 	return sb.String(), nil
