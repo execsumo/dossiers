@@ -7,11 +7,14 @@ import (
 
 // Suggestion represents a candidate dossier suggestion with a confidence score.
 type Suggestion struct {
-	ID         string  `json:"id"`
-	Name       string  `json:"name"`
-	Confidence string  `json:"confidence"` // "high", "medium", "low"
-	Reason     string  `json:"reason"`
-	Score      float64 `json:"score"` // internal numeric score for sorting
+	ID            string  `json:"id"`
+	Slug          string  `json:"slug"`
+	Name          string  `json:"name"`
+	Status        string  `json:"status"`
+	StalenessDays int     `json:"staleness_days"`
+	Confidence    string  `json:"confidence"` // "high", "medium", "low"
+	Reason        string  `json:"reason"`
+	Score         float64 `json:"score"` // internal numeric score for sorting
 }
 
 // ScoreDossier calculates a lexical similarity score between a query (like session content/name)
@@ -83,12 +86,20 @@ func ScoreDossier(query string, d *Dossier, now time.Time) Suggestion {
 		reason = "Plausible overlap."
 	}
 
+	staleness := int(now.Sub(d.Frontmatter.LastTouchedAt).Hours() / 24)
+	if staleness < 0 {
+		staleness = 0
+	}
+
 	return Suggestion{
-		ID:         d.Frontmatter.ID,
-		Name:       d.Frontmatter.Name,
-		Confidence: confidence,
-		Reason:     reason,
-		Score:      score,
+		ID:            d.Frontmatter.ID,
+		Slug:          d.Frontmatter.Slug,
+		Name:          d.Frontmatter.Name,
+		Status:        string(d.Frontmatter.Status),
+		StalenessDays: staleness,
+		Confidence:    confidence,
+		Reason:        reason,
+		Score:         score,
 	}
 }
 

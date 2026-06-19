@@ -274,6 +274,30 @@ The token target governs the **Distilled State context loaded on recall**. The d
 
 Sharing & multi-user · web app · in-app LLM wrapper · automated ingestion (Slack/email/Drive OAuth) · native binary attachment storage · semantic search at scale · automated snapshot refresh. These layer onto the core; the core must stand alone first.
 
+### Pre-create binding confirmation
+
+**Problem.** A user starting a new session says "let's work on the auth refactor." The agent calls `dossier_promote` or `dossier create` and a new Dossier is born — even though one already exists for that exact topic, sitting at 80% completion. Over time, the library fragments: multiple thin Dossiers for the same thread, none with full context.
+
+**The fix.** The agent already has everything it needs: the SessionStart hook injects the full unarchived Dossier list into context at the top of every session. Before creating a new Dossier, the agent should scan that in-context list for anything that looks related — no extra MCP call required. If plausible matches exist, surface them and ask the user to confirm before opening a new record.
+
+Because the hook output is silent to the user (injected into the agent's context window but not displayed as chat), the hook can also carry standing instructions directly to the agent, for example:
+
+> *Before creating a new Dossier, check the library above for an existing one on the same topic. If you find close matches, show them to the user and ask which to continue — or confirm that this is genuinely a new thread.*
+
+That makes the behavior automatic without any user-visible ceremony at session start.
+
+The confirmation itself should be lightweight:
+> "I see a couple of Dossiers that look related — *Auth refactor (active, last updated 3 days ago)* and *Login flow cleanup (blocked)*. Is one of these the right one to continue, or is this a separate thread?"
+
+If the user picks one, bind to it (`dossier_switch`) and resume. If none fit, proceed with creation.
+
+**Design notes:**
+- The check is zero-latency because the library is already in context — this is not a search call, just an in-context scan.
+- Hook instructions live alongside the injected library listing; keep them brief and imperative so they don't consume tokens unnecessarily.
+- v1 already returns `ambiguous_target` from `dossier_promote`/`dossier create` when the server-side suggestion step fires (SPEC §8.5). This roadmap item moves the check earlier — to the agent's judgment before the tool is called at all — which is faster and avoids a round-trip.
+- "None of these match" is a valid answer that should unlock creation without a second confirmation loop.
+- Binding to an existing Dossier is the happy path when the topic exists; the confirmation should feel like a quick sanity check, not an interrogation.
+
 ---
 
 ## 11. Build decisions (resolved)
