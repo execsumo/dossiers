@@ -278,18 +278,25 @@ Sharing & multi-user · web app · in-app LLM wrapper · automated ingestion (Sl
 
 **Problem.** A user starting a new session says "let's work on the auth refactor." The agent calls `dossier_promote` or `dossier create` and a new Dossier is born — even though one already exists for that exact topic, sitting at 80% completion. Over time, the library fragments: multiple thin Dossiers for the same thread, none with full context.
 
-**The fix.** Before creating a Dossier, search the existing library for likely matches (by title similarity, keyword overlap, or — in a later iteration — semantic embedding). If candidates exceed a confidence threshold, don't create yet. Instead, present the top matches to the user with enough signal to decide: title, status, priority, last-updated date, and the opening line of the Distilled State.
+**The fix.** The agent already has everything it needs: the SessionStart hook injects the full unarchived Dossier list into context at the top of every session. Before creating a new Dossier, the agent should scan that in-context list for anything that looks related — no extra MCP call required. If plausible matches exist, surface them and ask the user to confirm before opening a new record.
 
-The agent should frame this as a quick check, not a blocker:
-> "I found a couple of Dossiers that look related — *Auth refactor (active, last updated 3 days ago)* and *Login flow cleanup (blocked)*. Is one of these the right one to continue, or is this a genuinely separate thread?"
+Because the hook output is silent to the user (injected into the agent's context window but not displayed as chat), the hook can also carry standing instructions directly to the agent, for example:
 
-If the user picks an existing Dossier, bind to it (`dossier_switch`) and resume. If none fit, proceed with creation — but with explicit confirmation so the user understands a new record is being opened.
+> *Before creating a new Dossier, check the library above for an existing one on the same topic. If you find close matches, show them to the user and ask which to continue — or confirm that this is genuinely a new thread.*
 
-**Design notes for the implementation:**
-- v1 already runs a suggestion step before `dossier_promote` and returns `ambiguous_target` when confidence is high enough (SPEC §8.5, §7 `dossier promote`). This roadmap item is about promoting that internal guard into a deliberate, agent-presented UX flow rather than an API error code the caller has to handle.
-- The confidence threshold and result count (suggest: top 3) should be tunable. Too eager = constant interruptions; too conservative = the fragmentation problem remains. Start conservative and tighten based on dogfood.
+That makes the behavior automatic without any user-visible ceremony at session start.
+
+The confirmation itself should be lightweight:
+> "I see a couple of Dossiers that look related — *Auth refactor (active, last updated 3 days ago)* and *Login flow cleanup (blocked)*. Is one of these the right one to continue, or is this a separate thread?"
+
+If the user picks one, bind to it (`dossier_switch`) and resume. If none fit, proceed with creation.
+
+**Design notes:**
+- The check is zero-latency because the library is already in context — this is not a search call, just an in-context scan.
+- Hook instructions live alongside the injected library listing; keep them brief and imperative so they don't consume tokens unnecessarily.
+- v1 already returns `ambiguous_target` from `dossier_promote`/`dossier create` when the server-side suggestion step fires (SPEC §8.5). This roadmap item moves the check earlier — to the agent's judgment before the tool is called at all — which is faster and avoids a round-trip.
 - "None of these match" is a valid answer that should unlock creation without a second confirmation loop.
-- Binding to an existing Dossier (not creating a new one) is the happy path when the topic already exists; the flow should feel like confirmation, not interrogation.
+- Binding to an existing Dossier is the happy path when the topic exists; the confirmation should feel like a quick sanity check, not an interrogation.
 
 ---
 
