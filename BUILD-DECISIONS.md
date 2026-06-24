@@ -29,7 +29,7 @@ This document closes the implementation-discovery questions so the build can sta
 
 These are smaller inconsistencies a dev agent *will* hit. Resolved here; mechanics in `ARCHITECTURE.md` §"Concurrency & Revisions".
 
-1. **`base_revision` does not belong in Dossier frontmatter.** SPEC §4.1 lists it as a (optional) frontmatter field, but a revision is a *session-side* fact, not a property of the Dossier. **Remove it from frontmatter.** Instead: `dossier_recall`, `dossier_active`, and `dossier_switch` **return** the current revision; the agent passes it back as `base_revision` on `dossier_save`. The session binding persists it as `last_seen_revision`.
+1. **`base_revision` does not belong in Dossier frontmatter.** SPEC §4.1 lists it as a (optional) frontmatter field, but a revision is a *session-side* fact, not a property of the Dossier. **Remove it from frontmatter.** Instead: `dossier_recall` and `dossier_session` **return** the current revision; the agent passes it back as `base_revision` on `dossier_save`. The session binding persists it as `last_seen_revision`.
 
 2. **Recall output must include the revision.** SPEC §14.2 / §8 don't show recall returning a revision, but the agent needs it to save later. Recall returns `{distilled_state, frontmatter, revision, token_estimate, warnings}`.
 

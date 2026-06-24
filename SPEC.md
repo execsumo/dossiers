@@ -287,7 +287,7 @@ Binding fields:
 }
 ```
 
-If a harness cannot expose a durable session id, the agent may maintain binding in context only. In that case, Dossier must still support `dossier_switch(id)` and `dossier_active()` during the session, but deterministic recovery of the binding after restart is not guaranteed.
+If a harness cannot expose a durable session id, the agent may maintain binding in context only. In that case, Dossier must still support `dossier_session(id?)` during the session, but deterministic recovery of the binding after restart is not guaranteed.
 
 ### 5.2 Switching
 
@@ -444,11 +444,7 @@ Required tools:
 - `dossier_promote`
 - `dossier_link`
 - `dossier_merge`
-- `dossier_active`
-- `dossier_switch`
-- `dossier_path`
-- `dossier_set_status`
-- `dossier_set_lead`
+- `dossier_session`
 - `dossier_update`
 
 ### 8.2 Tool Contracts
@@ -964,8 +960,7 @@ Checks:
 
 - Each session can bind zero or one active Dossier.
 - Two sessions can bind different Dossiers.
-- `dossier_active` reports current binding.
-- `dossier_switch` changes binding and returns new Distilled State.
+- `dossier_session` reports or changes session binding and returns new Distilled State when switching.
 - `/clear` removes session context but does not alter Dossier files.
 
 ### 14.7 Harness Transparency

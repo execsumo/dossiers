@@ -57,21 +57,21 @@ func callTool(t *testing.T, svc *core.Service, name, args string) mcpEnvelope {
 
 // TestMCPSwitchResolvesSessionFromEnv proves an agent can switch/read the active dossier
 // without supplying session_id: the MCP server resolves it from CLAUDE_CODE_SESSION_ID,
-// and the binding round-trips through dossier_active under the same session.
+// and the binding round-trips through dossier_session under the same session.
 func TestMCPSwitchResolvesSessionFromEnv(t *testing.T) {
 	t.Setenv("DOSSIER_SESSION", "")
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "sess-mcp-A")
 
 	svc := newSessionTestService(t)
 
-	// switch with id only — no session_id param.
-	sw := callTool(t, svc, "dossier_switch", `{"id":"dos_1"}`)
+	// switch/bind with id only — no session_id param.
+	sw := callTool(t, svc, "dossier_session", `{"id":"dos_1"}`)
 	if !sw.OK {
-		t.Fatalf("expected switch ok, got error: %+v", sw.Error)
+		t.Fatalf("expected switch/bind ok, got error: %+v", sw.Error)
 	}
 
-	// active with no args — must report the binding made above for sess-mcp-A.
-	act := callTool(t, svc, "dossier_active", `{}`)
+	// active session binding with no args — must report the binding made above for sess-mcp-A.
+	act := callTool(t, svc, "dossier_session", `{}`)
 	if !act.OK {
 		t.Fatalf("expected active ok, got error: %+v", act.Error)
 	}
@@ -89,9 +89,9 @@ func TestMCPSwitchNoSessionDegradesVisibly(t *testing.T) {
 
 	svc := newSessionTestService(t)
 
-	env := callTool(t, svc, "dossier_switch", `{"id":"dos_1"}`)
+	env := callTool(t, svc, "dossier_session", `{"id":"dos_1"}`)
 	if env.OK {
-		t.Fatalf("expected switch to fail without a session id")
+		t.Fatalf("expected switch/bind to fail without a session id")
 	}
 	if env.Error == nil || env.Error.Code != ErrCodeHarnessCapUnavailable {
 		t.Errorf("expected error code %s, got %+v", ErrCodeHarnessCapUnavailable, env.Error)

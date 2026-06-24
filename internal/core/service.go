@@ -33,6 +33,7 @@ type RecallResult struct {
 	Frontmatter    Frontmatter `json:"frontmatter"`
 	Revision       Revision    `json:"revision"`
 	TokenEstimate  int         `json:"token_estimate"`
+	Path           string      `json:"path"`
 }
 
 // ListItem represents a single summary item for dossier listings.
@@ -49,6 +50,7 @@ type ListItem struct {
 	DueDate       string   `json:"due_date,omitempty"`
 	StalenessDays int      `json:"staleness_days"`
 	PriorityScore int      `json:"priority_score"`
+	Path          string   `json:"path"`
 }
 
 // DoctorReport summarizes integrity checks run by Doctor.
@@ -302,7 +304,7 @@ func (s *Service) Promote(ctx context.Context, req PromoteReq) (Result, error) {
 					Data: candidates,
 					NextActions: []NextAction{
 						`Present the candidates to the user: "I found Dossiers that look related — [for each: Name (status, N days since last update)]. Is one of these the right one to continue, or is this a separate thread?"`,
-						`If the user picks one: call dossier_switch with its slug to bind it, then dossier_recall to load its state.`,
+						`If the user picks one: call dossier_session with its slug to bind it, then dossier_recall to load its state.`,
 						`If the user confirms this is a new topic: call dossier_promote again with force=true.`,
 					},
 				}, NewError(ErrAmbiguousTarget, "Multiple likely Dossiers match this promote request.")
@@ -950,9 +952,10 @@ func (s *Service) Recall(ctx context.Context, req RecallReq) (Result, error) {
 		warnings = append(warnings, Warning(fmt.Sprintf("Distilled State exceeds token target (%d > %d tokens). Consider condensing.", tokens, target)))
 	}
 
+	dossierPath := filepath.Join(s.cfg.DossierHome, d.Frontmatter.Slug)
 	return Result{
 		OK:       true,
-		Data:     RecallResult{DistilledState: d.DistilledState.Body, Frontmatter: d.Frontmatter, Revision: rev, TokenEstimate: tokens},
+		Data:     RecallResult{DistilledState: d.DistilledState.Body, Frontmatter: d.Frontmatter, Revision: rev, TokenEstimate: tokens, Path: dossierPath},
 		Warnings: warnings,
 	}, nil
 }
@@ -1003,10 +1006,11 @@ func (s *Service) List(ctx context.Context, req ListReq) (Result, error) {
 	var items []ListItem
 	for _, sItem := range scored {
 		daysSinceTouched := int(now.Sub(sItem.fm.LastTouchedAt).Hours() / 24)
-if daysSinceTouched < 0 {
+		if daysSinceTouched < 0 {
 			daysSinceTouched = 0
 		}
 
+		dossierPath := filepath.Join(s.cfg.DossierHome, sItem.fm.Slug)
 		items = append(items, ListItem{
 			ID:            sItem.fm.ID,
 			Name:          sItem.fm.Name,
@@ -1020,6 +1024,7 @@ if daysSinceTouched < 0 {
 			DueDate:       sItem.fm.DueDate,
 			StalenessDays: daysSinceTouched,
 			PriorityScore: sItem.score,
+			Path:          dossierPath,
 		})
 	}
 
@@ -1471,7 +1476,7 @@ func (s *Service) SessionStart(ctx context.Context, sessionID string) (string, e
 		sb.WriteString("No active Dossier is bound to this session.\n\n")
 		sb.WriteString("When the user names a topic to work on, check the Open Dossiers list above before creating anything:\n")
 		sb.WriteString("1. If a close match exists, surface it: \"I see [Name] ([status], last touched N days ago) — is that the one to continue, or is this a new thread?\"\n")
-		sb.WriteString("2. If the user confirms an existing one, call dossier_switch with its slug.\n")
+		sb.WriteString("2. If the user confirms an existing one, call dossier_session with its slug.\n")
 		sb.WriteString("3. If none match or the user says it's new, call dossier_promote — it will run a similarity check and flag any missed candidates before creating.\n")
 	}
 

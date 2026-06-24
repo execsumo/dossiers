@@ -178,16 +178,14 @@ This guide is a prompt asset to iterate on like code — its quality is a primar
 All tools are namespaced with a **`dossier_` prefix** so they're unambiguously identifiable as Dossier's amid other MCP servers in a harness.
 
 - `dossier_list` — open-work list for in-session refresh (deterministic surfacing is the hook's job, §4.1)
-- `dossier_recall(id)` — token-targeted resume (§4.2)
+- `dossier_recall(id)` — token-targeted resume, returns the filesystem path of the dossier (§4.2)
 - `dossier_search(query, dossier_id?)`
 - `dossier_save(id)` — governed write, no gate (§4.4, §4.11)
 - `dossier_promote()` — promote current session
 - `dossier_link(id?)` — with suggestions
 - `dossier_merge(a, b)` — conflicts surfaced
-- `dossier_active()` / `dossier_switch(id)` — inspect or change the Dossier bound to the current agent session
-- `dossier_set_status` — lifecycle status change
-- `dossier_update(id, next_action?, open_questions?, importance?, urgency?, due_date?)` — update any metadata fields in one call
-- `dossier_path(id?)` — returns the active or specified Dossier directory path for inspection in the user's own tools
+- `dossier_session(id?)` — inspect or change the Dossier bound to the current agent session
+- `dossier_update(id, name?, status?, lead?, next_action?, open_questions?, importance?, urgency?, due_date?)` — update any metadata or frontmatter fields in one call
 
 Write tools **commit without a human gate** (D4), but writes are governed by the Distillation Guide and fire on a deterministic cadence (§4.11) — not at the agent's discretion. Safety is structural: nothing is deleted, the audit log records every write, and the user can edit any Distilled State after the fact. Exceptions: ambiguous link targets and merge conflict resolution require human disambiguation; that's contradiction/target resolution, not a distillation review gate.
 
@@ -201,7 +199,7 @@ Write tools **commit without a human gate** (D4), but writes are governed by the
 - Generates/refreshes a **context file** per Dossier for harnesses without MCP.
 
 ### 5.3 Slash command (in-session)
-- **`/dossier`** — lists Dossiers grouped by `status`, in surfacing order (§4.1), without leaving the agent session. Optional args: `/dossier active`, `/dossier blocked`, etc. to filter to one status. It also supports selecting/switching the session's active Dossier from the list. Thin wrapper over `dossier_list` + `dossier_switch`; this is the quick "what's on my plate right now" view mid-conversation.
+- **`/dossier`** — lists Dossiers grouped by `status`, in surfacing order (§4.1), without leaving the agent session. Optional args: `/dossier active`, `/dossier blocked`, etc. to filter to one status. It also supports selecting/switching the session's active Dossier from the list. Thin wrapper over `dossier_list` + `dossier_session`; this is the quick "what's on my plate right now" view mid-conversation.
 
 ### 5.4 Hooks (deterministic behavior)
 Some behavior must not depend on the agent choosing to act; hooks make it deterministic where the harness supports them (e.g. Claude Code), with the context-file/skill fallback elsewhere.
@@ -290,7 +288,7 @@ That makes the behavior automatic without any user-visible ceremony at session s
 The confirmation itself should be lightweight:
 > "I see a couple of Dossiers that look related — *Auth refactor (active, last updated 3 days ago)* and *Login flow cleanup (blocked)*. Is one of these the right one to continue, or is this a separate thread?"
 
-If the user picks one, bind to it (`dossier_switch`) and resume. If none fit, proceed with creation.
+If the user picks one, bind to it (`dossier_session`) and resume. If none fit, proceed with creation.
 
 **Design notes:**
 - The check is zero-latency because the library is already in context — this is not a search call, just an in-context scan.

@@ -158,68 +158,26 @@ func getToolDefinitions() []ToolDefinition {
 			},
 		},
 		{
-			Name:        "dossier_active",
-			Description: "Show which dossier is bound to the current session. The session is resolved automatically from the harness; do not pass session_id unless overriding it.",
+			Name:        "dossier_session",
+			Description: "Get the active dossier bound to the current session, or switch/bind the session to a dossier (by slug or id) if the 'id' parameter is provided.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
+					"id":         map[string]any{"type": "string", "description": "Optional: Dossier slug or id to bind to the active session. If omitted, the current active dossier is returned."},
 					"session_id": map[string]any{"type": "string", "description": "Optional override; normally omit. Defaults to the current Claude Code session."},
 				},
-			},
-		},
-		{
-			Name:        "dossier_switch",
-			Description: "Bind the current session to a dossier (by slug or id) so session-start/end and pre-compaction save to it. The session is resolved automatically from the harness; pass only id.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"id":         map[string]any{"type": "string", "description": "Dossier slug or id to make active."},
-					"session_id": map[string]any{"type": "string", "description": "Optional override; normally omit. Defaults to the current Claude Code session."},
-				},
-				"required": []string{"id"},
-			},
-		},
-		{
-			Name:        "dossier_path",
-			Description: "Retrieve the file path of a dossier or workspace root",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"id": map[string]any{"type": "string"},
-				},
-			},
-		},
-		{
-			Name:        "dossier_set_status",
-			Description: "Set a dossier's status",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"id":     map[string]any{"type": "string"},
-					"status": map[string]any{"type": "string"},
-				},
-				"required": []string{"id", "status"},
-			},
-		},
-		{
-			Name:        "dossier_set_lead",
-			Description: "Set a dossier's lead assignee",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"id":   map[string]any{"type": "string"},
-					"lead": map[string]any{"type": "string"},
-				},
-				"required": []string{"id", "lead"},
 			},
 		},
 		{
 			Name:        "dossier_update",
-			Description: "Update a dossier's metadata fields — next action, open questions, and/or priority (importance, urgency, due date). All fields except id are optional; only supplied fields are written.",
+			Description: "Update a dossier's metadata fields — name, status, lead assignee, next action, open questions, and/or priority (importance, urgency, due date). All fields except id are optional; only supplied fields are written.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"id":             map[string]any{"type": "string", "description": "The dossier slug or ID to update"},
+					"name":           map[string]any{"type": "string", "description": "Replace the current name (omit to leave unchanged)"},
+					"status":         map[string]any{"type": "string", "description": "Replace the current status: active|waiting|blocked|resolved|archived (omit to leave unchanged)"},
+					"lead":           map[string]any{"type": "string", "description": "Replace the lead assignee (omit to leave unchanged)"},
 					"next_action":    map[string]any{"type": "string", "description": "Replace the current next action (omit to leave unchanged)"},
 					"open_questions": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Replace the open questions list (omit to leave unchanged)"},
 					"importance":     map[string]any{"type": "string", "description": "low|medium|high (omit to leave unchanged)"},
@@ -368,68 +326,29 @@ func (s *Server) handleToolCall(ctx context.Context, id any, name string, args j
 			ResolvedConflicts: params.ResolvedConflicts,
 		})
 
-	case "dossier_active":
-		var params struct {
-			SessionID string `json:"session_id"`
-		}
-		_ = json.Unmarshal(args, &params)
-		// Resolve the session id from the param or the harness env (CLAUDE_CODE_SESSION_ID).
-		// MCP must not fall back to the shared bucket, so degrade visibly if unresolved.
-		sid, serr := harness.ResolveSessionID(params.SessionID, false)
-		if serr != nil {
-			err = core.NewError(core.ErrHarnessCapabilityUnavailable, serr.Error())
-		} else {
-			res, err = s.svc.Active(ctx, core.ActiveReq{SessionID: sid})
-		}
-
-	case "dossier_switch":
+	case "dossier_session":
 		var params struct {
 			ID        string `json:"id"`
 			SessionID string `json:"session_id"`
 		}
-		if err := json.Unmarshal(args, &params); err != nil {
-			s.sendError(id, -32602, "Invalid params", nil)
-			return
-		}
+		_ = json.Unmarshal(args, &params)
 		sid, serr := harness.ResolveSessionID(params.SessionID, false)
 		if serr != nil {
 			err = core.NewError(core.ErrHarnessCapabilityUnavailable, serr.Error())
 		} else {
-			res, err = s.svc.Switch(ctx, core.SwitchReq{ID: params.ID, SessionID: sid})
+			if params.ID != "" {
+				res, err = s.svc.Switch(ctx, core.SwitchReq{ID: params.ID, SessionID: sid})
+			} else {
+				res, err = s.svc.Active(ctx, core.ActiveReq{SessionID: sid})
+			}
 		}
-
-	case "dossier_path":
-		var params struct {
-			ID string `json:"id"`
-		}
-		_ = json.Unmarshal(args, &params)
-		res, err = s.svc.Path(ctx, core.PathReq{ID: params.ID})
-
-	case "dossier_set_status":
-		var params struct {
-			ID     string      `json:"id"`
-			Status core.Status `json:"status"`
-		}
-		if err := json.Unmarshal(args, &params); err != nil {
-			s.sendError(id, -32602, "Invalid params", nil)
-			return
-		}
-		res, err = s.svc.SetStatus(ctx, core.SetStatusReq{ID: params.ID, Status: params.Status})
-
-	case "dossier_set_lead":
-		var params struct {
-			ID   string `json:"id"`
-			Lead string `json:"lead"`
-		}
-		if err := json.Unmarshal(args, &params); err != nil {
-			s.sendError(id, -32602, "Invalid params", nil)
-			return
-		}
-		res, err = s.svc.SetLead(ctx, core.SetLeadReq{ID: params.ID, Lead: params.Lead})
 
 	case "dossier_update":
 		var params struct {
 			ID            string   `json:"id"`
+			Name          *string  `json:"name"`
+			Status        *string  `json:"status"`
+			Lead          *string  `json:"lead"`
 			NextAction    *string  `json:"next_action"`
 			OpenQuestions []string `json:"open_questions"`
 			Importance    string   `json:"importance"`
@@ -441,6 +360,15 @@ func (s *Server) handleToolCall(ctx context.Context, id any, name string, args j
 			return
 		}
 		updates := map[string]any{}
+		if params.Name != nil {
+			updates["name"] = *params.Name
+		}
+		if params.Status != nil {
+			updates["status"] = *params.Status
+		}
+		if params.Lead != nil {
+			updates["lead"] = *params.Lead
+		}
 		if params.NextAction != nil {
 			updates["next_action"] = *params.NextAction
 		}
