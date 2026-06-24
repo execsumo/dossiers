@@ -16,7 +16,9 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/fsnotify/fsnotify"
 )
 
 // View represents the current active TUI screen view.
@@ -129,6 +131,15 @@ type mergeResultMsg struct {
 }
 type errMsg error
 
+type dossierUpdatedMsg struct{}
+
+func waitForUpdate(updateChan <-chan string) tea.Cmd {
+	return func() tea.Msg {
+		<-updateChan
+		return dossierUpdatedMsg{}
+	}
+}
+
 type targetDossier struct {
 	id           string
 	name         string
@@ -196,6 +207,10 @@ type Model struct {
 	mergeCursor            int
 	mergeConflict          *core.Conflict
 	conflictResolverCursor int // 0 = Resolve/Force, 1 = Cancel
+
+	watcher      *fsnotify.Watcher
+	updateChan   chan string
+	watchingPath string
 }
 
 // NewModel instantiates the root TUI model.
@@ -237,6 +252,25 @@ func NewModel(svc *core.Service) Model {
 		core.StatusArchived,
 	}
 
+	watcher, err := fsnotify.NewWatcher()
+	updateChan := make(chan string, 100)
+	if err == nil {
+		go func() {
+			for {
+				select {
+				case event, ok := <-watcher.Events:
+					if !ok {
+						return
+					}
+					if event.Op.Has(fsnotify.Write) || event.Op.Has(fsnotify.Rename) || event.Op.Has(fsnotify.Create) {
+						updateChan <- "update"
+					}
+				case <-watcher.Errors:
+				}
+			}
+		}()
+	}
+
 	return Model{
 		svc:              svc,
 		currentView:      ViewDashboard,
@@ -245,12 +279,14 @@ func NewModel(svc *core.Service) Model {
 		conflictViewport: cvp,
 		loading:          true,
 		statusOptions:    statusOptions,
+		watcher:          watcher,
+		updateChan:       updateChan,
 	}
 }
 
 // Init initializes the tea program, triggering initial loads.
 func (m Model) Init() tea.Cmd {
-	return m.listDossiersCmd()
+	return tea.Batch(m.listDossiersCmd(), waitForUpdate(m.updateChan))
 }
 
 // listDossiersCmd fetches the dossier list asynchronously.
@@ -498,6 +534,23 @@ func cycleUrgency(curr core.Urgency, forward bool) core.Urgency {
 		return opts[(idx+1)%len(opts)]
 	}
 	return opts[(idx-1+len(opts))%len(opts)]
+}
+
+func (m Model) renderMarkdown(content string) string {
+	wrapWidth := m.width - 2 // small margin
+	if wrapWidth < 40 {
+		wrapWidth = 40
+	}
+	r, err := glamour.NewTermRenderer(
+		glamour.WithStandardStyle("dark"),
+		glamour.WithWordWrap(wrapWidth),
+	)
+	if err == nil {
+		if rendered, err := r.Render(content); err == nil {
+			return rendered
+		}
+	}
+	return content
 }
 
 // Update handles incoming messages and updates model state.
@@ -752,6 +805,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.recalculateViewportLayout()
 		m.recalculateConflictViewportLayout()
 
+		if m.currentView == ViewDetail && m.recallResult.Frontmatter.ID != "" {
+			m.viewport.SetContent(m.renderMarkdown(m.recallResult.DistilledState))
+		}
+		if m.currentView == ViewMergeConflictResolver && m.mergeConflict != nil {
+			diffMd := fmt.Sprintf("```diff\n%s\n```", m.mergeConflict.DiffAgainstCurrent)
+			m.conflictViewport.SetContent(m.renderMarkdown(diffMd))
+		}
+
 	case listDossiersMsg:
 		m.loading = false
 		m.items = msg
@@ -765,9 +826,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.currentView = ViewDetail
 			m.recallResult = msg.result
 			m.warnings = msg.warnings
-			m.viewport.SetContent(msg.result.DistilledState)
+			m.viewport.SetContent(m.renderMarkdown(msg.result.DistilledState))
 			m.recalculateViewportLayout()
 			m.viewport.YOffset = 0
+
+			if m.watcher != nil {
+				if m.watchingPath != "" {
+					m.watcher.Remove(m.watchingPath)
+				}
+				res, err := m.svc.Path(context.Background(), core.PathReq{ID: m.recallResult.Frontmatter.ID})
+				if err == nil && res.Data != nil {
+					m.watchingPath = res.Data.(string)
+					m.watcher.Add(m.watchingPath)
+				}
+			}
 		}
 
 	case linkResultMsg:
@@ -810,7 +882,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if ok {
 					m.currentView = ViewMergeConflictResolver
 					m.mergeConflict = conflict
-					m.conflictViewport.SetContent(conflict.DiffAgainstCurrent)
+					diffMd := fmt.Sprintf("```diff\n%s\n```", conflict.DiffAgainstCurrent)
+					m.conflictViewport.SetContent(m.renderMarkdown(diffMd))
 					m.recalculateConflictViewportLayout()
 					m.conflictResolverCursor = 0
 					return m, nil
@@ -851,6 +924,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errMsg:
 		m.loading = false
 		m.err = msg
+
+	case dossierUpdatedMsg:
+		cmds = append(cmds, waitForUpdate(m.updateChan))
+		if m.currentView == ViewDetail && m.recallResult.Frontmatter.ID != "" {
+			m.loading = true
+			cmds = append(cmds, m.recallDossierCmd(m.recallResult.Frontmatter.ID))
+		}
 	}
 
 	// Update view-specific sub-components
@@ -1332,8 +1412,12 @@ func (m Model) View() string {
 // read/edit viewer over the dossier store; the per-session "active" binding (Switch)
 // is intentionally not exposed here — see ADR 0004 and BUILD-DECISIONS B9.
 func Run(ctx context.Context, svc *core.Service) error {
+	m := NewModel(svc)
+	if m.watcher != nil {
+		defer m.watcher.Close()
+	}
 	p := tea.NewProgram(
-		NewModel(svc),
+		m,
 		tea.WithAltScreen(),
 		tea.WithContext(ctx),
 	)

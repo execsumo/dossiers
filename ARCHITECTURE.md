@@ -76,7 +76,7 @@ dossier/
     hooks/               # hook PAYLOAD builders + session-start/end handlers (call core)
     cli/                 # cobra commands → core.Service → render (text/--json)
     mcp/                 # stdio MCP server → core.Service → §8.2 envelope
-    tui/                 # bubbletea models/views → core.Service
+    tui/                 # bubbletea models/views (fsnotify hot-refresh, glamour markdown) → core.Service
   assets/                # go:embed — Distillation Guide + context templates
     guide.md
     library.tmpl.md

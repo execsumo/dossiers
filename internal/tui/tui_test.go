@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,12 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+var ansiRegex = regexp.MustCompile("[\u001B\u009B][[\\]()#;?]*(?:(?:(?:[a-zA-Z\\d]*(?:;[a-zA-Z\\d]*)*)?\u0007)|(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PRZcf-ntqry=><~]))")
+
+func stripANSI(str string) string {
+	return ansiRegex.ReplaceAllString(str, "")
+}
 
 type testClock struct{}
 
@@ -267,8 +274,9 @@ func TestTUI_Detail(t *testing.T) {
 	}
 
 	viewStr := m.View()
-	if !strings.Contains(viewStr, "This is the distilled state of Alpha") {
-		t.Errorf("expected view to contain distilled state, got:\n%s", viewStr)
+	cleanView := stripANSI(viewStr)
+	if !strings.Contains(cleanView, "This is the distilled state of Alpha") {
+		t.Errorf("expected view to contain distilled state, got:\n%s", cleanView)
 	}
 
 	// Press esc to go back

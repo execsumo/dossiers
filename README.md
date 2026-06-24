@@ -83,11 +83,10 @@ dossier        # or: dossier tui
 
 It opens a priority-sorted dashboard of your open Dossiers. From there you can:
 
-- **open** a Dossier to read its distilled state (with a live token estimate and over-target warning),
+- **open** a Dossier to read its distilled state (with a live token estimate and over-target warning). The distilled state is rendered as rich markdown natively in the terminal. The view live-refreshes automatically when Claude Code updates the dossier in the background.
 - **edit** status, priority (importance/urgency/due date), and next action inline,
-- **switch** the session's active Dossier,
 - **link** a source, resolving ambiguous matches by picking from ranked candidates, and
-- **merge** one Dossier into another, resolving any conflicts in a side-by-side view (sources are archived, never deleted).
+- **merge** one Dossier into another, resolving any conflicts in a syntax-highlighted side-by-side view (sources are archived, never deleted).
 
 The TUI is a thin layer over the same core as the CLI and MCP, so it behaves identically — `q` quits, `?` toggles help.
 
