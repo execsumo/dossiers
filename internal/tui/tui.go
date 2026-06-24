@@ -216,7 +216,11 @@ type Model struct {
 
 	watcher      *fsnotify.Watcher
 	updateChan   chan string
-	watchingPath string
+	watchedPaths map[string]bool
+
+	// Cached markdown renderer, rebuilt only when the wrap width changes.
+	mdRenderer      *glamour.TermRenderer
+	mdRendererWidth int
 }
 
 // NewModel instantiates the root TUI model.
@@ -287,6 +291,43 @@ func NewModel(svc *core.Service) Model {
 		statusOptions:    statusOptions,
 		watcher:          watcher,
 		updateChan:       updateChan,
+		watchedPaths:     map[string]bool{},
+	}
+}
+
+// syncWatches makes the fsnotify watch set exactly match paths, adding new ones
+// and dropping stale ones. Failures to add/remove a single path are non-fatal.
+func (m *Model) syncWatches(paths []string) {
+	if m.watcher == nil {
+		return
+	}
+	desired := make(map[string]bool, len(paths))
+	for _, p := range paths {
+		if p == "" {
+			continue
+		}
+		desired[p] = true
+		if !m.watchedPaths[p] {
+			if err := m.watcher.Add(p); err == nil {
+				m.watchedPaths[p] = true
+			}
+		}
+	}
+	for p := range m.watchedPaths {
+		if !desired[p] {
+			_ = m.watcher.Remove(p)
+			delete(m.watchedPaths, p)
+		}
+	}
+}
+
+// ensureWatch adds a single path to the watch set without disturbing the others.
+func (m *Model) ensureWatch(path string) {
+	if m.watcher == nil || path == "" || m.watchedPaths[path] {
+		return
+	}
+	if err := m.watcher.Add(path); err == nil {
+		m.watchedPaths[path] = true
 	}
 }
 
@@ -370,9 +411,9 @@ func (m Model) mergeCmd(sourceID, targetID string, resolved []string) tea.Cmd {
 
 func (m Model) setStatusCmd(id string, status core.Status) tea.Cmd {
 	return func() tea.Msg {
-		_, err := m.svc.SetStatus(context.Background(), core.SetStatusReq{
-			ID:     id,
-			Status: status,
+		_, err := m.svc.Save(context.Background(), core.SaveReq{
+			ID:                 id,
+			FrontmatterUpdates: map[string]any{"status": string(status)},
 		})
 		return mutationResultMsg{err: err, prevView: m.previousView, targetID: id}
 	}
@@ -391,9 +432,9 @@ func (m Model) saveNextActionCmd(id string, baseRev core.Revision, nextAction st
 
 func (m Model) saveLeadCmd(id string, lead string) tea.Cmd {
 	return func() tea.Msg {
-		_, err := m.svc.SetLead(context.Background(), core.SetLeadReq{
-			ID:   id,
-			Lead: lead,
+		_, err := m.svc.Save(context.Background(), core.SaveReq{
+			ID:                 id,
+			FrontmatterUpdates: map[string]any{"lead": lead},
 		})
 		return mutationResultMsg{err: err, prevView: m.previousView, targetID: id}
 	}
@@ -567,19 +608,26 @@ func cycleUrgency(curr core.Urgency, forward bool) core.Urgency {
 	return opts[(idx-1+len(opts))%len(opts)]
 }
 
-func (m Model) renderMarkdown(content string) string {
+func (m *Model) renderMarkdown(content string) string {
 	wrapWidth := m.width - 2 // small margin
 	if wrapWidth < 40 {
 		wrapWidth = 40
 	}
-	r, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle("dark"),
-		glamour.WithWordWrap(wrapWidth),
-	)
-	if err == nil {
-		if rendered, err := r.Render(content); err == nil {
-			return rendered
+	// Rebuild the renderer only when the wrap width changes; constructing one is
+	// relatively expensive and renderMarkdown runs on every resize/refresh.
+	if m.mdRenderer == nil || m.mdRendererWidth != wrapWidth {
+		r, err := glamour.NewTermRenderer(
+			glamour.WithStandardStyle("dark"),
+			glamour.WithWordWrap(wrapWidth),
+		)
+		if err != nil {
+			return content
 		}
+		m.mdRenderer = r
+		m.mdRendererWidth = wrapWidth
+	}
+	if rendered, err := m.mdRenderer.Render(content); err == nil {
+		return rendered
 	}
 	return content
 }
@@ -867,7 +915,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case listDossiersMsg:
 		m.loading = false
-		
+
 		sort.Slice(msg, func(i, j int) bool {
 			if msg[i].Lead != msg[j].Lead {
 				if msg[i].Lead == "" {
@@ -891,7 +939,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					leadLabel = "Unassigned (Me)"
 				}
 				expanded = append(expanded, core.ListItem{
-					ID: "",
+					ID:   "",
 					Name: "▶ Lead: " + leadLabel,
 				})
 				currentLead = item.Lead
@@ -899,9 +947,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			expanded = append(expanded, item)
 		}
-		
+
 		m.items = expanded
 		m.populateTableRows()
+
+		// Watch every dossier directory so the dashboard live-refreshes on
+		// external edits, plus the currently open dossier if it isn't listed.
+		var watchPaths []string
+		for _, item := range msg {
+			watchPaths = append(watchPaths, item.Path)
+		}
+		if m.currentView == ViewDetail {
+			watchPaths = append(watchPaths, m.recallResult.Path)
+		}
+		m.syncWatches(watchPaths)
 
 	case recallDossierMsg:
 		m.loading = false
@@ -915,16 +974,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.recalculateViewportLayout()
 			m.viewport.YOffset = 0
 
-			if m.watcher != nil {
-				if m.watchingPath != "" {
-					m.watcher.Remove(m.watchingPath)
-				}
-				res, err := m.svc.Path(context.Background(), core.PathReq{ID: m.recallResult.Frontmatter.ID})
-				if err == nil && res.Data != nil {
-					m.watchingPath = res.Data.(string)
-					m.watcher.Add(m.watchingPath)
-				}
-			}
+			// Recall returns the dossier's directory path; make sure it's watched
+			// so the detail view live-refreshes on external edits.
+			m.ensureWatch(m.recallResult.Path)
 		}
 
 	case linkResultMsg:
@@ -1015,6 +1067,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.currentView == ViewDetail && m.recallResult.Frontmatter.ID != "" {
 			m.loading = true
 			cmds = append(cmds, m.recallDossierCmd(m.recallResult.Frontmatter.ID))
+		} else if m.currentView == ViewDashboard {
+			cmds = append(cmds, m.listDossiersCmd())
 		}
 	}
 

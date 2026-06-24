@@ -447,6 +447,8 @@ Required tools:
 - `dossier_session`
 - `dossier_update`
 
+> **Note on `dossier_update`:** it accepts `name`, `status`, `lead`, `next_action`, `open_questions`, and priority fields, and routes them all through the single `Save` write path (so CLI/MCP/TUI behave identically and edits get optimistic-concurrency handling). Changing `name` updates the **display name only** — the `slug` (and the on-disk directory) is the durable identifier and never changes on rename.
+
 ### 8.2 Tool Contracts
 
 All tools return:

@@ -55,6 +55,29 @@ func callTool(t *testing.T, svc *core.Service, name, args string) mcpEnvelope {
 	return env
 }
 
+// TestMCPUpdateLeadAndStatus proves the consolidated dossier_update tool routes lead and
+// status through the unified Save path and they round-trip back via dossier_recall.
+func TestMCPUpdateLeadAndStatus(t *testing.T) {
+	svc := newSessionTestService(t)
+
+	upd := callTool(t, svc, "dossier_update", `{"id":"dos_1","lead":"Alice","status":"waiting"}`)
+	if !upd.OK {
+		t.Fatalf("expected update ok, got error: %+v", upd.Error)
+	}
+
+	rec := callTool(t, svc, "dossier_recall", `{"id":"dos_1"}`)
+	if !rec.OK {
+		t.Fatalf("expected recall ok, got error: %+v", rec.Error)
+	}
+	raw, _ := json.Marshal(rec.Data)
+	if !strings.Contains(string(raw), "Alice") {
+		t.Errorf("expected recalled dossier to carry lead Alice, got %s", raw)
+	}
+	if !strings.Contains(string(raw), "waiting") {
+		t.Errorf("expected recalled dossier status waiting, got %s", raw)
+	}
+}
+
 // TestMCPSwitchResolvesSessionFromEnv proves an agent can switch/read the active dossier
 // without supplying session_id: the MCP server resolves it from CLAUDE_CODE_SESSION_ID,
 // and the binding round-trips through dossier_session under the same session.

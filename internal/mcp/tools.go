@@ -175,7 +175,7 @@ func getToolDefinitions() []ToolDefinition {
 				"type": "object",
 				"properties": map[string]any{
 					"id":             map[string]any{"type": "string", "description": "The dossier slug or ID to update"},
-					"name":           map[string]any{"type": "string", "description": "Replace the current name (omit to leave unchanged)"},
+					"name":           map[string]any{"type": "string", "description": "Replace the display name (omit to leave unchanged). The slug/directory is the durable identifier and does NOT change on rename."},
 					"status":         map[string]any{"type": "string", "description": "Replace the current status: active|waiting|blocked|resolved|archived (omit to leave unchanged)"},
 					"lead":           map[string]any{"type": "string", "description": "Replace the lead assignee (omit to leave unchanged)"},
 					"next_action":    map[string]any{"type": "string", "description": "Replace the current next action (omit to leave unchanged)"},

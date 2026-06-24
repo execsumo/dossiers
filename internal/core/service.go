@@ -528,9 +528,33 @@ func applyFrontmatterUpdates(d *Dossier, updates map[string]any) {
 	}
 }
 
+// describeFrontmatterChanges returns a human-readable, audit-friendly summary of
+// which frontmatter fields changed between before and after, each as "field old→new".
+// It returns "" when nothing material changed, so callers can fall back to a generic message.
+func describeFrontmatterChanges(before, after Frontmatter) string {
+	var parts []string
+	add := func(field, oldVal, newVal string) {
+		if oldVal != newVal {
+			parts = append(parts, fmt.Sprintf("%s %q→%q", field, oldVal, newVal))
+		}
+	}
+	add("name", before.Name, after.Name)
+	add("status", string(before.Status), string(after.Status))
+	add("lead", before.Lead, after.Lead)
+	add("next_action", before.NextAction, after.NextAction)
+	add("importance", string(before.Importance), string(after.Importance))
+	add("urgency", string(before.Urgency), string(after.Urgency))
+	add("due_date", before.DueDate, after.DueDate)
+	if strings.Join(before.OpenQuestions, "|||") != strings.Join(after.OpenQuestions, "|||") {
+		parts = append(parts, fmt.Sprintf("open_questions (%d→%d)", len(before.OpenQuestions), len(after.OpenQuestions)))
+	}
+	return strings.Join(parts, "; ")
+}
+
 func (s *Service) Save(ctx context.Context, req SaveReq) (Result, error) {
 	var d *Dossier
 	var baseRev Revision
+	var beforeFM Frontmatter
 	var err error
 
 	isNew := req.ID == ""
@@ -552,6 +576,7 @@ func (s *Service) Save(ctx context.Context, req SaveReq) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
+		beforeFM = d.Frontmatter
 
 		if req.BaseRevision != "" && baseRev != req.BaseRevision {
 			// Concurrency mismatch! Attempt to read the dossier at the user's base revision.
@@ -701,6 +726,16 @@ func (s *Service) Save(ctx context.Context, req SaveReq) (Result, error) {
 		event.Event = AuditEventCreate
 	} else {
 		event.Event = AuditEventSave
+		if req.FrontmatterUpdates != nil {
+			if msg := describeFrontmatterChanges(beforeFM, d.Frontmatter); msg != "" {
+				event.Message = msg
+			}
+			// SPEC §11 (status §300): a lifecycle status change must be auditable as
+			// status_changed, even when it arrives via the unified Save path.
+			if beforeFM.Status != d.Frontmatter.Status {
+				event.Event = AuditEventStatusChanged
+			}
+		}
 	}
 	_ = s.store.AppendAudit(d.Frontmatter.ID, event)
 
@@ -1281,76 +1316,6 @@ func (s *Service) Path(ctx context.Context, req PathReq) (Result, error) {
 	return Result{
 		OK:   true,
 		Data: dossierPath,
-	}, nil
-}
-
-type SetStatusReq struct {
-	ID     string
-	Status Status
-}
-
-func (s *Service) SetStatus(ctx context.Context, req SetStatusReq) (Result, error) {
-	d, rev, err := s.store.Read(req.ID)
-	if err != nil {
-		return Result{}, err
-	}
-
-	oldStatus := d.Frontmatter.Status
-	d.Frontmatter.Status = req.Status
-	d.Frontmatter.LastTouchedAt = s.clock.Now()
-
-	newRev, err := s.store.Write(d, rev)
-	if err != nil {
-		return Result{}, err
-	}
-
-	_ = s.store.AppendAudit(d.Frontmatter.ID, AuditEvent{
-		TS:             s.clock.Now(),
-		Event:          AuditEventStatusChanged,
-		DossierID:      d.Frontmatter.ID,
-		BeforeRevision: string(rev),
-		AfterRevision:  string(newRev),
-		Message:        fmt.Sprintf("status changed from %q to %q", oldStatus, req.Status),
-	})
-
-	return Result{
-		OK:   true,
-		Data: newRev,
-	}, nil
-}
-
-type SetLeadReq struct {
-	ID   string
-	Lead string
-}
-
-func (s *Service) SetLead(ctx context.Context, req SetLeadReq) (Result, error) {
-	d, rev, err := s.store.Read(req.ID)
-	if err != nil {
-		return Result{}, err
-	}
-
-	oldLead := d.Frontmatter.Lead
-	d.Frontmatter.Lead = req.Lead
-	d.Frontmatter.LastTouchedAt = s.clock.Now()
-
-	newRev, err := s.store.Write(d, rev)
-	if err != nil {
-		return Result{}, err
-	}
-
-	_ = s.store.AppendAudit(d.Frontmatter.ID, AuditEvent{
-		TS:             s.clock.Now(),
-		Event:          AuditEventSave,
-		DossierID:      d.Frontmatter.ID,
-		BeforeRevision: string(rev),
-		AfterRevision:  string(newRev),
-		Message:        fmt.Sprintf("Lead changed from %q to %q", oldLead, req.Lead),
-	})
-
-	return Result{
-		OK:   true,
-		Data: newRev,
 	}, nil
 }
 

@@ -26,7 +26,7 @@ This is ports-and-adapters (hexagonal). It buys us the property the SPEC implici
                    ┌────────▼─────────┐
                    │   core.Service   │   use-cases: Promote, Save,
                    │  (orchestration) │   Link, Merge, Recall, Switch,
-                   └────────┬─────────┘   List, SetStatus, Archive, ...
+                   └────────┬─────────┘   List, Archive, ...
                             │ depends on PORTS (interfaces)
         ┌──────────┬────────┼─────────┬──────────┬──────────┐
         │  Store   │ Searcher │ Tokenizer │ Harness │  Clock  │
@@ -86,7 +86,7 @@ dossier/
 
 Notes:
 - `internal/` so nothing is importable as a library — this is an application, not a SDK.
-- The dependency rule is enforced by direction: `core` imports none of its sibling packages. A lint check (or a simple `go list` assertion in CI) should guard this.
+- The dependency rule is enforced by direction: `core` imports none of its sibling packages. This is guarded in CI (`.github/workflows/ci.yml`, "Dependency direction" step) via a `go list` assertion over `./internal/core`'s imports, alongside `gofmt`/`go vet`/`go test`.
 
 ---
 
@@ -113,7 +113,7 @@ func (s *Service) List(ctx, ListReq) (Result, error)
 func (s *Service) Search(ctx, SearchReq) (Result, error)
 func (s *Service) Switch(ctx, SwitchReq) (Result, error)
 func (s *Service) Active(ctx, ActiveReq) (Result, error)
-func (s *Service) SetStatus / SetNextAction / SetOpenQuestions / SetPriority(...)
+func (s *Service) Save(ctx, SaveReq) (Result, error)        // single write path: distilled state + frontmatter (name/status/lead/next_action/priority/...) + artifacts, with optimistic-concurrency conflict handling. All metadata edits (status, lead, etc.) route through here so CLI/MCP/TUI stay identical.
 func (s *Service) Archive(ctx, ArchiveReq) (Result, error)
 func (s *Service) Path(ctx, PathReq) (Result, error)
 func (s *Service) Doctor(ctx) (Result, error)

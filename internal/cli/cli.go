@@ -731,9 +731,9 @@ func NewRootCmd() *cobra.Command {
 				fmt.Printf("Error: %v\n", err)
 				os.Exit(1)
 			}
-			res, err := svc.SetStatus(context.Background(), core.SetStatusReq{
-				ID:     args[0],
-				Status: core.Status(args[1]),
+			res, err := svc.Save(context.Background(), core.SaveReq{
+				ID:                 args[0],
+				FrontmatterUpdates: map[string]any{"status": args[1]},
 			})
 			if err != nil {
 				fmt.Printf("Status update failed: %v\n", err)
@@ -754,9 +754,9 @@ func NewRootCmd() *cobra.Command {
 				fmt.Printf("Error: %v\n", err)
 				os.Exit(1)
 			}
-			res, err := svc.SetLead(context.Background(), core.SetLeadReq{
-				ID:   args[0],
-				Lead: args[1],
+			res, err := svc.Save(context.Background(), core.SaveReq{
+				ID:                 args[0],
+				FrontmatterUpdates: map[string]any{"lead": args[1]},
 			})
 			if err != nil {
 				fmt.Printf("Lead update failed: %v\n", err)

@@ -9,19 +9,12 @@ type FileLock struct {
 	fl *flock.Flock
 }
 
-// Lock acquires an exclusive lock on the file at the given path.
+// Lock acquires an exclusive lock on the file at the given path, blocking until
+// it is available.
 func Lock(path string) (*FileLock, error) {
 	fl := flock.New(path)
-	locked, err := fl.TryLock()
-	if err != nil {
+	if err := fl.Lock(); err != nil {
 		return nil, err
-	}
-	if !locked {
-		// Wait for the lock
-		err = fl.Lock()
-		if err != nil {
-			return nil, err
-		}
 	}
 	return &FileLock{fl: fl}, nil
 }
