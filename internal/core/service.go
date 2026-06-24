@@ -41,6 +41,7 @@ type ListItem struct {
 	Name          string   `json:"name"`
 	Slug          string   `json:"slug"`
 	Status        string   `json:"status"`
+	Lead          string   `json:"lead,omitempty"`
 	NextAction    string   `json:"next_action"`
 	OpenQuestions []string `json:"open_questions"`
 	Importance    string   `json:"importance"`
@@ -263,6 +264,7 @@ type PromoteReq struct {
 	DistilledStateMarkdown string
 	FromFilePath           string
 	Content                string
+	Lead                   string
 	Force                  bool
 }
 
@@ -312,6 +314,7 @@ func (s *Service) Promote(ctx context.Context, req PromoteReq) (Result, error) {
 		DistilledStateMarkdown: req.DistilledStateMarkdown,
 		FrontmatterUpdates: map[string]any{
 			"name": req.Name,
+			"lead": req.Lead,
 		},
 	})
 	if err != nil {
@@ -446,6 +449,8 @@ func getFMField(fm Frontmatter, field string) any {
 		return fm.Name
 	case "status":
 		return string(fm.Status)
+	case "lead":
+		return fm.Lead
 	case "next_action":
 		return fm.NextAction
 	case "importance":
@@ -472,6 +477,11 @@ func applyFrontmatterUpdates(d *Dossier, updates map[string]any) {
 	if val, ok := updates["status"]; ok {
 		if strVal, ok := val.(string); ok {
 			d.Frontmatter.Status = Status(strVal)
+		}
+	}
+	if val, ok := updates["lead"]; ok {
+		if strVal, ok := val.(string); ok {
+			d.Frontmatter.Lead = strVal
 		}
 	}
 	if val, ok := updates["next_action"]; ok {
@@ -568,7 +578,7 @@ func (s *Service) Save(ctx context.Context, req SaveReq) (Result, error) {
 
 						if storeVal != baseVal {
 							var normProposedVal any = proposedVal
-							if f == "status" || f == "importance" || f == "urgency" {
+							if f == "status" || f == "importance" || f == "urgency" || f == "lead" {
 								if sVal, ok := proposedVal.(string); ok {
 									normProposedVal = sVal
 								}
@@ -993,7 +1003,7 @@ func (s *Service) List(ctx context.Context, req ListReq) (Result, error) {
 	var items []ListItem
 	for _, sItem := range scored {
 		daysSinceTouched := int(now.Sub(sItem.fm.LastTouchedAt).Hours() / 24)
-		if daysSinceTouched < 0 {
+if daysSinceTouched < 0 {
 			daysSinceTouched = 0
 		}
 
@@ -1002,6 +1012,7 @@ func (s *Service) List(ctx context.Context, req ListReq) (Result, error) {
 			Name:          sItem.fm.Name,
 			Slug:          sItem.fm.Slug,
 			Status:        string(sItem.fm.Status),
+			Lead:          sItem.fm.Lead,
 			NextAction:    sItem.fm.NextAction,
 			OpenQuestions: sItem.fm.OpenQuestions,
 			Importance:    string(sItem.fm.Importance),
@@ -1294,7 +1305,42 @@ func (s *Service) SetStatus(ctx context.Context, req SetStatusReq) (Result, erro
 		DossierID:      d.Frontmatter.ID,
 		BeforeRevision: string(rev),
 		AfterRevision:  string(newRev),
-		Message:        fmt.Sprintf("status changed from %s to %s", oldStatus, req.Status),
+		Message:        fmt.Sprintf("status changed from %q to %q", oldStatus, req.Status),
+	})
+
+	return Result{
+		OK:   true,
+		Data: newRev,
+	}, nil
+}
+
+type SetLeadReq struct {
+	ID   string
+	Lead string
+}
+
+func (s *Service) SetLead(ctx context.Context, req SetLeadReq) (Result, error) {
+	d, rev, err := s.store.Read(req.ID)
+	if err != nil {
+		return Result{}, err
+	}
+
+	oldLead := d.Frontmatter.Lead
+	d.Frontmatter.Lead = req.Lead
+	d.Frontmatter.LastTouchedAt = s.clock.Now()
+
+	newRev, err := s.store.Write(d, rev)
+	if err != nil {
+		return Result{}, err
+	}
+
+	_ = s.store.AppendAudit(d.Frontmatter.ID, AuditEvent{
+		TS:             s.clock.Now(),
+		Event:          AuditEventSave,
+		DossierID:      d.Frontmatter.ID,
+		BeforeRevision: string(rev),
+		AfterRevision:  string(newRev),
+		Message:        fmt.Sprintf("Lead changed from %q to %q", oldLead, req.Lead),
 	})
 
 	return Result{

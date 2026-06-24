@@ -202,6 +202,18 @@ func getToolDefinitions() []ToolDefinition {
 			},
 		},
 		{
+			Name:        "dossier_set_lead",
+			Description: "Set a dossier's lead assignee",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"id":   map[string]any{"type": "string"},
+					"lead": map[string]any{"type": "string"},
+				},
+				"required": []string{"id", "lead"},
+			},
+		},
+		{
 			Name:        "dossier_update",
 			Description: "Update a dossier's metadata fields — next action, open questions, and/or priority (importance, urgency, due date). All fields except id are optional; only supplied fields are written.",
 			InputSchema: map[string]any{
@@ -403,6 +415,17 @@ func (s *Server) handleToolCall(ctx context.Context, id any, name string, args j
 			return
 		}
 		res, err = s.svc.SetStatus(ctx, core.SetStatusReq{ID: params.ID, Status: params.Status})
+
+	case "dossier_set_lead":
+		var params struct {
+			ID   string `json:"id"`
+			Lead string `json:"lead"`
+		}
+		if err := json.Unmarshal(args, &params); err != nil {
+			s.sendError(id, -32602, "Invalid params", nil)
+			return
+		}
+		res, err = s.svc.SetLead(ctx, core.SetLeadReq{ID: params.ID, Lead: params.Lead})
 
 	case "dossier_update":
 		var params struct {

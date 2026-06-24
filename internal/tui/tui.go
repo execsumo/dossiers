@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -29,6 +30,7 @@ const (
 	ViewDetail
 	ViewStatusPicker
 	ViewNextActionEditor
+	ViewLeadEditor
 	ViewPriorityEditor
 	ViewLinkInput
 	ViewLinkSelector
@@ -148,6 +150,7 @@ type targetDossier struct {
 	urgency      core.Urgency
 	dueDate      string
 	nextAction   string
+	lead         string
 	baseRevision core.Revision
 }
 
@@ -186,6 +189,9 @@ type Model struct {
 
 	// Next Action Editor view state
 	nextActionInput textinput.Model
+
+	// Lead Editor view state
+	leadInput textinput.Model
 
 	// Priority Editor view state
 	priorityFocus  int // 0 = Importance, 1 = Urgency, 2 = Due Date, 3 = Save, 4 = Cancel
@@ -383,6 +389,16 @@ func (m Model) saveNextActionCmd(id string, baseRev core.Revision, nextAction st
 	}
 }
 
+func (m Model) saveLeadCmd(id string, lead string) tea.Cmd {
+	return func() tea.Msg {
+		_, err := m.svc.SetLead(context.Background(), core.SetLeadReq{
+			ID:   id,
+			Lead: lead,
+		})
+		return mutationResultMsg{err: err, prevView: m.previousView, targetID: id}
+	}
+}
+
 func (m Model) savePriorityCmd(id string, baseRev core.Revision, importance core.Importance, urgency core.Urgency, dueDate string) tea.Cmd {
 	return func() tea.Msg {
 		_, err := m.svc.Save(context.Background(), core.SaveReq{
@@ -409,6 +425,7 @@ func (m Model) getTargetDossier() (targetDossier, bool) {
 			urgency:      fm.Urgency,
 			dueDate:      fm.DueDate,
 			nextAction:   fm.NextAction,
+			lead:         fm.Lead,
 			baseRevision: m.recallResult.Revision,
 		}, true
 	}
@@ -425,6 +442,7 @@ func (m Model) getTargetDossier() (targetDossier, bool) {
 			urgency:      core.Urgency(item.Urgency),
 			dueDate:      item.DueDate,
 			nextAction:   item.NextAction,
+			lead:         item.Lead,
 			baseRevision: "", // Skip check from dashboard
 		}, true
 	}
@@ -457,6 +475,19 @@ func (m *Model) startEditNextAction(t targetDossier) {
 	m.nextActionInput.SetValue(t.nextAction)
 	m.nextActionInput.Focus()
 	m.nextActionInput.Width = 60
+}
+
+func (m *Model) startEditLead(t targetDossier) {
+	m.previousView = m.currentView
+	m.currentView = ViewLeadEditor
+	m.targetID = t.id
+	m.targetName = t.name
+
+	m.leadInput = textinput.New()
+	m.leadInput.Placeholder = "e.g. Alice"
+	m.leadInput.SetValue(t.lead)
+	m.leadInput.Focus()
+	m.leadInput.Width = 40
 }
 
 func (m *Model) startEditPriority(t targetDossier) {
@@ -493,7 +524,7 @@ func (m *Model) startMergeSelector(sourceID, sourceName string) {
 	// filter other dossiers
 	m.mergeTargets = nil
 	for _, item := range m.items {
-		if item.ID != sourceID {
+		if item.ID != sourceID && item.ID != "" {
 			m.mergeTargets = append(m.mergeTargets, item)
 		}
 	}
@@ -643,6 +674,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.nextActionInput, cmd = m.nextActionInput.Update(msg)
 			return m, cmd
 
+		case ViewLeadEditor:
+			switch msg.String() {
+			case "esc":
+				m.currentView = m.previousView
+				return m, nil
+			case "enter":
+				m.loading = true
+				m.err = nil
+				return m, m.saveLeadCmd(m.targetID, m.leadInput.Value())
+			}
+			m.leadInput, cmd = m.leadInput.Update(msg)
+			return m, cmd
+
 		case ViewStatusPicker:
 			switch msg.String() {
 			case "esc":
@@ -746,6 +790,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				idx := m.table.Cursor()
 				if idx >= 0 && idx < len(m.items) {
 					dossierID := m.items[idx].ID
+					if dossierID == "" {
+						return m, nil // prevent selection of header
+					}
 					m.loading = true
 					m.err = nil
 					return m, m.recallDossierCmd(dossierID)
@@ -757,13 +804,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		case "p":
-			if t, ok := m.getTargetDossier(); ok {
+			if t, ok := m.getTargetDossier(); ok && t.id != "" {
 				m.startEditPriority(t)
 				return m, nil
 			}
 		case "n":
-			if t, ok := m.getTargetDossier(); ok {
+			if t, ok := m.getTargetDossier(); ok && t.id != "" {
 				m.startEditNextAction(t)
+				return m, nil
+			}
+		case "a":
+			if t, ok := m.getTargetDossier(); ok && t.id != "" {
+				m.startEditLead(t)
 				return m, nil
 			}
 		case "e":
@@ -815,7 +867,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case listDossiersMsg:
 		m.loading = false
-		m.items = msg
+		
+		sort.Slice(msg, func(i, j int) bool {
+			if msg[i].Lead != msg[j].Lead {
+				if msg[i].Lead == "" {
+					return true
+				}
+				if msg[j].Lead == "" {
+					return false
+				}
+				return msg[i].Lead < msg[j].Lead
+			}
+			return msg[i].PriorityScore > msg[j].PriorityScore
+		})
+
+		var expanded []core.ListItem
+		var currentLead string
+		first := true
+		for _, item := range msg {
+			if first || item.Lead != currentLead {
+				leadLabel := item.Lead
+				if leadLabel == "" {
+					leadLabel = "Unassigned (Me)"
+				}
+				expanded = append(expanded, core.ListItem{
+					ID: "",
+					Name: "▶ Lead: " + leadLabel,
+				})
+				currentLead = item.Lead
+				first = false
+			}
+			expanded = append(expanded, item)
+		}
+		
+		m.items = expanded
 		m.populateTableRows()
 
 	case recallDossierMsg:
@@ -952,8 +1037,19 @@ type editorFinishedMsg struct {
 
 // populateTableRows maps items into the table rows.
 func (m *Model) populateTableRows() {
-	rows := make([]table.Row, len(m.items))
-	for i, item := range m.items {
+	rows := make([]table.Row, 0, len(m.items))
+	for _, item := range m.items {
+		if item.ID == "" {
+			rows = append(rows, table.Row{
+				item.Name,
+				"",
+				"",
+				"",
+				"",
+			})
+			continue
+		}
+
 		statusStr := item.Status
 		priorityStr := strconv.Itoa(item.PriorityScore)
 		stalenessStr := fmt.Sprintf("%dd ago", item.StalenessDays)
@@ -961,13 +1057,13 @@ func (m *Model) populateTableRows() {
 			stalenessStr = "today"
 		}
 
-		rows[i] = table.Row{
-			item.Name,
+		rows = append(rows, table.Row{
+			"  " + item.Name,
 			statusStr,
 			priorityStr,
 			item.NextAction,
 			stalenessStr,
-		}
+		})
 	}
 	m.table.SetRows(rows)
 }
@@ -1057,6 +1153,16 @@ func (m Model) renderNextActionEditor() string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Edit Next Action for %s:\n\n", m.targetName))
 	sb.WriteString(m.nextActionInput.View())
+	sb.WriteString("\n\n")
+	sb.WriteString("press enter to save • esc to cancel")
+	return editorBoxStyle.Render(sb.String())
+}
+
+func (m Model) renderLeadEditor() string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Assigning %s\n\n", lipgloss.NewStyle().Foreground(vibrantGreen).Bold(true).Render(m.targetName)))
+	sb.WriteString("Lead (full name):\n")
+	sb.WriteString(m.leadInput.View())
 	sb.WriteString("\n\n")
 	sb.WriteString("press enter to save • esc to cancel")
 	return editorBoxStyle.Render(sb.String())
@@ -1340,6 +1446,12 @@ func (m Model) View() string {
 		sb.WriteString(m.renderNextActionEditor())
 		sb.WriteString("\n")
 
+	case ViewLeadEditor:
+		sb.WriteString(subtitleStyle.Render(" Durable memory layer for agentic workflows — Update Lead"))
+		sb.WriteString("\n\n")
+		sb.WriteString(m.renderLeadEditor())
+		sb.WriteString("\n")
+
 	case ViewPriorityEditor:
 		sb.WriteString(subtitleStyle.Render(" Durable memory layer for agentic workflows — Update Priority"))
 		sb.WriteString("\n\n")
@@ -1380,14 +1492,16 @@ func (m Model) View() string {
 		}
 	}
 
-	keyHelp := "↑/↓: select • enter: detail • s: status • p: priority • n: next action • l: link • m: merge • q: quit"
+	keyHelp := "↑/↓: select • enter: detail • s: status • a: lead • p: priority • n: next action • l: link • m: merge • q: quit"
 	switch m.currentView {
 	case ViewDetail:
-		keyHelp = "↑/↓/pgup/pgdn: scroll • s: status • p: priority • n: next action • esc: back • q: quit"
+		keyHelp = "↑/↓/pgup/pgdn: scroll • s: status • a: lead • p: priority • n: next action • esc: back • q: quit"
 	case ViewStatusPicker:
 		keyHelp = "↑/↓: select status • enter: confirm • esc: cancel"
 	case ViewNextActionEditor:
 		keyHelp = "enter: save next action • esc: cancel"
+	case ViewLeadEditor:
+		keyHelp = "enter: save lead • esc: cancel"
 	case ViewPriorityEditor:
 		keyHelp = "↑/↓: focus • ←/→: cycle priority • enter: cycle/save • esc: cancel"
 	case ViewLinkInput:

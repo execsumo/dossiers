@@ -37,6 +37,7 @@ var (
 	fromFileFlag      string
 	forceFlag         bool
 	sessionFlag       string
+	leadFlag          string
 )
 
 // NewRootCmd constructs the root cobra command hierarchy.
@@ -216,8 +217,8 @@ func NewRootCmd() *cobra.Command {
 				return
 			}
 
-			fmt.Printf("%-30s %-8s %-8s %-5s %s\n", "NAME/SLUG", "STATUS", "PRIORITY", "STALE", "NEXT ACTION")
-			fmt.Println(strings.Repeat("-", 80))
+			fmt.Printf("%-30s %-15s %-8s %-8s %-5s %s\n", "NAME/SLUG", "LEAD", "STATUS", "PRIORITY", "STALE", "NEXT ACTION")
+			fmt.Println(strings.Repeat("-", 95))
 			for _, item := range items {
 				nameOrSlug := item.Name
 				if nameOrSlug == "" {
@@ -227,12 +228,19 @@ func NewRootCmd() *cobra.Command {
 					nameOrSlug = nameOrSlug[:25] + "..."
 				}
 
+				lead := item.Lead
+				if lead == "" {
+					lead = "Unassigned"
+				} else if len(lead) > 13 {
+					lead = lead[:10] + "..."
+				}
+
 				nextAction := item.NextAction
 				if len(nextAction) > 28 {
 					nextAction = nextAction[:25] + "..."
 				}
 
-				fmt.Printf("%-30s %-8s %-8d %-5d %s\n", nameOrSlug, item.Status, item.PriorityScore, item.StalenessDays, nextAction)
+				fmt.Printf("%-30s %-15s %-8s %-8d %-5d %s\n", nameOrSlug, lead, item.Status, item.PriorityScore, item.StalenessDays, nextAction)
 			}
 		},
 	}
@@ -271,6 +279,7 @@ func NewRootCmd() *cobra.Command {
 			fmt.Printf("Name:           %s\n", recall.Frontmatter.Name)
 			fmt.Printf("ID:             %s\n", recall.Frontmatter.ID)
 			fmt.Printf("Slug:           %s\n", recall.Frontmatter.Slug)
+			fmt.Printf("Lead:           %s\n", recall.Frontmatter.Lead)
 			fmt.Printf("Status:         %s\n", recall.Frontmatter.Status)
 			fmt.Printf("Importance:     %s\n", recall.Frontmatter.Importance)
 			fmt.Printf("Urgency:        %s\n", recall.Frontmatter.Urgency)
@@ -498,6 +507,7 @@ func NewRootCmd() *cobra.Command {
 				Name:                   args[0],
 				DistilledStateMarkdown: distilledFlag,
 				Content:                content,
+				Lead:                   leadFlag,
 				Force:                  forceFlag || yesFlag,
 			}
 
@@ -531,6 +541,7 @@ func NewRootCmd() *cobra.Command {
 	}
 	promoteCmd.Flags().StringVar(&distilledFlag, "distilled", "", "Distilled state markdown body")
 	promoteCmd.Flags().StringVar(&fromFileFlag, "from-file", "", "Path to session content file")
+	promoteCmd.Flags().StringVar(&leadFlag, "lead", "", "Lead assignee for the dossier")
 	promoteCmd.Flags().BoolVar(&forceFlag, "force", false, "Force create dossier even if matches exist")
 	promoteCmd.Flags().BoolVar(&jsonFlag, "json", false, "Output results in JSON format")
 
@@ -729,6 +740,29 @@ func NewRootCmd() *cobra.Command {
 				os.Exit(1)
 			}
 			fmt.Printf("Status updated successfully. New revision: %s\n", res.Data.(core.Revision))
+		},
+	}
+
+	leadCmd := &cobra.Command{
+		Use:   "lead <slug-or-id> <lead-name>",
+		Short: "Update lead of a dossier",
+		Args:  cobra.ExactArgs(2),
+		Run: func(cmd *cobra.Command, args []string) {
+			homeDir := resolveHomeDir()
+			svc, err := wire(homeDir)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+			res, err := svc.SetLead(context.Background(), core.SetLeadReq{
+				ID:   args[0],
+				Lead: args[1],
+			})
+			if err != nil {
+				fmt.Printf("Lead update failed: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("Lead updated successfully. New revision: %s\n", res.Data.(core.Revision))
 		},
 	}
 
@@ -961,6 +995,7 @@ func NewRootCmd() *cobra.Command {
 	rootCmd.AddCommand(switchCmd)
 	rootCmd.AddCommand(mergeCmd)
 	rootCmd.AddCommand(statusCmd)
+	rootCmd.AddCommand(leadCmd)
 	rootCmd.AddCommand(nextCmd)
 	rootCmd.AddCommand(questionsCmd)
 	rootCmd.AddCommand(priorityCmd)

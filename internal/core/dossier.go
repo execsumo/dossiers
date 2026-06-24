@@ -71,6 +71,7 @@ type Frontmatter struct {
 	UpdatedAt     time.Time  `yaml:"updated_at"`
 	LastTouchedAt time.Time  `yaml:"last_touched_at"`
 	Status        Status     `yaml:"status"`
+	Lead          string     `yaml:"lead,omitempty"`
 	NextAction    string     `yaml:"next_action"`
 	OpenQuestions []string   `yaml:"open_questions"`
 	Importance    Importance `yaml:"importance"`

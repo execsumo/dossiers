@@ -217,8 +217,8 @@ func TestTUI_Dashboard(t *testing.T) {
 	newM, _ = m.Update(listMsg)
 
 	updatedModel := newM.(Model)
-	if len(updatedModel.items) != 1 {
-		t.Fatalf("expected 1 item, got %d", len(updatedModel.items))
+	if len(updatedModel.items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(updatedModel.items))
 	}
 
 	// Trigger a mock window resize to initialize columns and height
@@ -257,7 +257,10 @@ func TestTUI_Detail(t *testing.T) {
 	newM, _ := m.Update(listMsg)
 	m = newM.(Model)
 
-	// Simulate pressing enter
+	// Move cursor down to select the actual item, not the separator row
+	m.table.MoveDown(1)
+
+	// Dashboard: Enter to view detail
 	newM, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = newM.(Model)
 	if cmd == nil {
@@ -308,6 +311,9 @@ func TestTUI_InlineEditing(t *testing.T) {
 	listMsg := m.listDossiersCmd()()
 	newM, _ := m.Update(listMsg)
 	m = newM.(Model)
+
+	// Move cursor down to select actual item
+	m.table.MoveDown(1)
 
 	// 1. Test Status Editing (press 's')
 	newM, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
@@ -536,6 +542,9 @@ func TestTUI_Merge(t *testing.T) {
 	listMsg := m.listDossiersCmd()()
 	newM, _ := m.Update(listMsg)
 	m = newM.(Model)
+
+	// Move cursor down to select actual item
+	m.table.MoveDown(1)
 
 	// Press 'm' to merge Source Dossier
 	newM, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
