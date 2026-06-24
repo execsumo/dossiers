@@ -55,8 +55,8 @@ A shipped **Distillation Guide** tells the agent *what* to keep; the hooks decid
 Everything is scriptable too. The CLI, MCP, and hooks are thin layers over one core, so they behave identically.
 
 ```bash
-# Promote a topic into a Dossier (optionally seed its distilled state)
-dossier promote "payments-migration" --distilled "## Situation
+# Promote a topic into a Dossier (optionally seed its distilled state and lead)
+dossier promote "payments-migration" --lead "Alice" --distilled "## Situation
 Migrating billing off the legacy gateway.
 ## Next action
 Confirm webhook signing keys with the vendor."
@@ -64,6 +64,8 @@ Confirm webhook signing keys with the vendor."
 dossier ls                        # open Dossiers, by priority
 dossier show payments-migration   # full distilled state + metadata
 dossier search "webhook"          # search distilled state + archives
+dossier status payments-migration active
+dossier lead payments-migration "Bob"
 dossier next payments-migration "Write the cutover runbook"
 dossier priority payments-migration --importance h --urgency h
 dossier link payments-migration --from-file ./notes.md   # attach a source to the archive
@@ -81,10 +83,10 @@ For interactive browsing and editing, launch the full-screen TUI — run `dossie
 dossier        # or: dossier tui
 ```
 
-It opens a priority-sorted dashboard of your open Dossiers. From there you can:
+It opens a priority-sorted dashboard of your open Dossiers, automatically grouped by their assigned Lead. From there you can:
 
-- **open** a Dossier to read its distilled state (with a live token estimate and over-target warning). The distilled state is rendered as rich markdown natively in the terminal. The view live-refreshes automatically when Claude Code updates the dossier in the background.
-- **edit** status, priority (importance/urgency/due date), and next action inline,
+- **open** a Dossier to read its distilled state (with a live token estimate and over-target warning). The distilled state is rendered natively as rich, syntax-highlighted Markdown. The view automatically live-refreshes when Claude Code updates the dossier in the background.
+- **edit** the Lead, status, priority (importance/urgency/due date), and next action inline without leaving the dashboard,
 - **link** a source, resolving ambiguous matches by picking from ranked candidates, and
 - **merge** one Dossier into another, resolving any conflicts in a syntax-highlighted side-by-side view (sources are archived, never deleted).
 

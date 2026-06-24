@@ -55,6 +55,7 @@ A distinct topic of work. Its distilled state lives in **one Markdown file** (D9
 
 - **Frontmatter (YAML):** identity (`id`, `name`, `slug`, `created_at`, `updated_at`, `last_touched_at`) and lifecycle (D8):
   - `status ∈ {active, blocked, waiting, resolved, archived}`
+  - `lead` (string)
   - `next_action` (string), `open_questions` (list)
   - `importance ∈ {high, medium, low}`, `urgency ∈ {high, medium, low}`, `due_date` (ISO date, optional)
   - `staleness` is derived from `last_touched_at`, not stored.
@@ -116,7 +117,7 @@ Local-first. One directory per Dossier; no index, no DB.
 ### 4.1 Surface-on-load (D3) — *must populate available Dossiers when the agent starts*
 - **Deterministic where the harness allows it.** Surfacing should not depend on the agent remembering to call a tool. A **SessionStart hook** (§5.4) injects the open-work list into context on every supported hook-capable session start — read from frontmatter across `*/dossier.md` (D9), no index. Harnesses without hooks fall back to the generated context file and MCP/manual refresh.
 - The `dossier_list` MCP tool still exists for on-demand refresh within a session, but the *guarantee* of surfacing comes from the hook, not the tool.
-- Payload per Dossier: `name`, `status`, `next_action`, top `open_questions`, `importance`, `urgency`, `due_date`, `staleness`, `path`, and any harness capability warnings (for example: "transcript archive unavailable in this session").
+- Payload per Dossier: `name`, `status`, `lead`, `next_action`, top `open_questions`, `importance`, `urgency`, `due_date`, `staleness`, `path`, and any harness capability warnings (for example: "transcript archive unavailable in this session").
 - CLI/TUI `dossier ls` shows the same, sortable/filterable by any of these.
 - **Open-work view:** default filter = `status ∈ {active, blocked, waiting}`. This is the daily driver.
 - **Surfacing order:** rank by a priority signal, not raw recency — `urgency × importance` (Eisenhower-style), with `due_date` proximity *escalating* effective urgency (overdue → top), and `staleness` as the tiebreaker. So an overdue high-importance Dossier surfaces above a fresh low-priority one. Weights are configurable; the default puts overdue-or-due-soon + high-importance at the top.

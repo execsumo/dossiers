@@ -106,6 +106,7 @@ created_at: 2026-06-14T15:40:00-07:00
 updated_at: 2026-06-14T16:10:00-07:00
 last_touched_at: 2026-06-14T16:10:00-07:00
 status: active
+lead: "Alice"
 next_action: "Compare revised pricing scenarios with sales feedback."
 open_questions:
   - "Does Sales prefer account-tier or usage-tier packaging?"
@@ -132,6 +133,7 @@ Required fields:
 
 Optional fields:
 
+- `lead`
 - `due_date`
 - `token_target`
 - `base_revision`
@@ -349,6 +351,7 @@ dossier merge <source> <target> [--json]
 dossier recall <slug-or-id> [--json]
 dossier search <query> [--dossier <slug-or-id>] [--json]
 dossier status <slug-or-id> <active|waiting|blocked|resolved|archived>
+dossier lead <slug-or-id> "<lead-name>"
 dossier next <slug-or-id> "<next action>"
 dossier questions <slug-or-id> add|set|clear [...]
 dossier priority <slug-or-id> --importance <h|m|l> --urgency <h|m|l> [--due <date>]
@@ -445,6 +448,7 @@ Required tools:
 - `dossier_switch`
 - `dossier_path`
 - `dossier_set_status`
+- `dossier_set_lead`
 - `dossier_update`
 
 ### 8.2 Tool Contracts
@@ -508,6 +512,7 @@ Output Dossier item:
   "name": "Pricing model refresh",
   "slug": "pricing-model-refresh",
   "status": "active",
+  "lead": "Alice",
   "next_action": "Compare revised pricing scenarios with sales feedback.",
   "open_questions": ["Does Sales prefer account-tier or usage-tier packaging?"],
   "importance": "high",
