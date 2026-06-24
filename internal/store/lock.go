@@ -1,31 +1,32 @@
 package store
 
 import (
-	"os"
-	"syscall"
+	"github.com/gofrs/flock"
 )
 
 // FileLock represents an active advisory file lock.
 type FileLock struct {
-	file *os.File
+	fl *flock.Flock
 }
 
 // Lock acquires an exclusive lock on the file at the given path.
 func Lock(path string) (*FileLock, error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+	fl := flock.New(path)
+	locked, err := fl.TryLock()
 	if err != nil {
 		return nil, err
 	}
-	err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
-	if err != nil {
-		f.Close()
-		return nil, err
+	if !locked {
+		// Wait for the lock
+		err = fl.Lock()
+		if err != nil {
+			return nil, err
+		}
 	}
-	return &FileLock{file: f}, nil
+	return &FileLock{fl: fl}, nil
 }
 
 // Unlock releases the exclusive lock and closes the lock file descriptor.
 func (l *FileLock) Unlock() error {
-	defer l.file.Close()
-	return syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
+	return l.fl.Unlock()
 }
