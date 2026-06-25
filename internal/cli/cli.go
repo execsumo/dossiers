@@ -862,22 +862,25 @@ func NewRootCmd() *cobra.Command {
 			updates := make(map[string]any)
 			if importanceFlag != "" {
 				switch importanceFlag {
-				case "h":
+				case "h", "high", "m", "medium":
+					// importance/urgency are binary (high|low); "medium" and other
+					// non-low values map toward attention rather than being written
+					// as an invalid value the store would later reject.
 					updates["importance"] = "high"
-				case "l":
+				case "l", "low":
 					updates["importance"] = "low"
 				default:
-					updates["importance"] = importanceFlag
+					updates["importance"] = "high"
 				}
 			}
 			if urgencyFlag != "" {
 				switch urgencyFlag {
-				case "h":
+				case "h", "high", "m", "medium":
 					updates["urgency"] = "high"
-				case "l":
+				case "l", "low":
 					updates["urgency"] = "low"
 				default:
-					updates["urgency"] = urgencyFlag
+					updates["urgency"] = "high"
 				}
 			}
 			if dueFlag != "" {
@@ -1194,7 +1197,28 @@ func wire(dossierHome string) (*core.Service, error) {
 	hregAdapter := harness.NewRegistry(dossierHome)
 	clockAdapter := &realClock{}
 
-	return core.NewService(storeAdapter, searchAdapter, tokAdapter, hregAdapter, clockAdapter, cfg.ToCoreConfig()), nil
+	svc := core.NewService(storeAdapter, searchAdapter, tokAdapter, hregAdapter, clockAdapter, cfg.ToCoreConfig())
+
+	// One-time, version-gated migration: when the store was last touched by an
+	// older build, eagerly heal any frontmatter the current schema no longer
+	// accepts (e.g. a removed enum value, or a newly required field). The version
+	// gate makes this a cheap no-op on every subsequent launch. Output goes to
+	// stderr so it never corrupts the MCP stdio protocol on `mcp serve`.
+	if cfg.SchemaVersion < core.CurrentSchemaVersion {
+		if res, err := svc.Migrate(context.Background()); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: frontmatter migration skipped: %v\n", err)
+		} else {
+			for _, w := range res.Warnings {
+				fmt.Fprintf(os.Stderr, "%s\n", w)
+			}
+			cfg.SchemaVersion = core.CurrentSchemaVersion
+			if err := cfg.Save(cfgPath); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not record schema version (migration will re-run next launch): %v\n", err)
+			}
+		}
+	}
+
+	return svc, nil
 }
 
 func expandTilde(path string) string {

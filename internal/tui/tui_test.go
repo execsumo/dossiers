@@ -594,4 +594,3 @@ func TestHeaderHasNoSession(t *testing.T) {
 		}
 	}
 }
-

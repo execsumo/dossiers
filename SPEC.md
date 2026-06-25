@@ -354,7 +354,7 @@ dossier status <slug-or-id> <active|waiting|blocked|resolved|archived>
 dossier lead <slug-or-id> "<lead-name>"
 dossier next <slug-or-id> "<next action>"
 dossier questions <slug-or-id> add|set|clear [...]
-dossier priority <slug-or-id> --importance <h|m|l> --urgency <h|m|l> [--due <date>]
+dossier priority <slug-or-id> --importance <h|l> --urgency <h|l> [--due <date>]
 dossier active [--session <session-id>] [--json]
 dossier switch <slug-or-id> [--session <session-id>] [--json]
 dossier path [<slug-or-id>] [--json]
