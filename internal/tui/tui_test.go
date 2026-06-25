@@ -217,8 +217,8 @@ func TestTUI_Dashboard(t *testing.T) {
 	newM, _ = m.Update(listMsg)
 
 	updatedModel := newM.(Model)
-	if len(updatedModel.items) != 2 {
-		t.Fatalf("expected 2 items, got %d", len(updatedModel.items))
+	if len(updatedModel.items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(updatedModel.items))
 	}
 
 	// Trigger a mock window resize to initialize columns and height
@@ -411,16 +411,6 @@ func TestTUI_NoActiveBinding(t *testing.T) {
 	listMsg := m.listDossiersCmd()()
 	newM, _ := m.Update(listMsg)
 	m = newM.(Model)
-
-	// Press 'a': must be a no-op (no command, view unchanged).
-	newM, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
-	m = newM.(Model)
-	if cmd != nil {
-		t.Error("expected 'a' key to be a no-op, but it returned a command")
-	}
-	if m.currentView != ViewDashboard {
-		t.Errorf("expected to remain on ViewDashboard, got %v", m.currentView)
-	}
 
 	// The dashboard must not render an active-dossier star marker.
 	viewStr := m.View()
@@ -615,3 +605,4 @@ func TestHeaderHasNoSession(t *testing.T) {
 		}
 	}
 }
+

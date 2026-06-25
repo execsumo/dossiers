@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/fsnotify/fsnotify"
 )
@@ -227,11 +228,12 @@ type Model struct {
 func NewModel(svc *core.Service) Model {
 	// Initialize default empty table
 	columns := []table.Column{
-		{Title: "Name", Width: 22},
-		{Title: "Status", Width: 10},
+		{Title: "Name", Width: 18},
+		{Title: "Status", Width: 8},
+		{Title: "Lead", Width: 8},
 		{Title: "Priority", Width: 8},
-		{Title: "Next Action", Width: 35},
-		{Title: "Staleness", Width: 10},
+		{Title: "Next Action", Width: 13},
+		{Title: "Staleness", Width: 8},
 	}
 
 	t := table.New(
@@ -616,8 +618,17 @@ func (m *Model) renderMarkdown(content string) string {
 	// Rebuild the renderer only when the wrap width changes; constructing one is
 	// relatively expensive and renderMarkdown runs on every resize/refresh.
 	if m.mdRenderer == nil || m.mdRendererWidth != wrapWidth {
+		// Use the default dark style but remove the markdown header prefixes
+		cfg := *styles.DefaultStyles["dark"]
+		cfg.H1.Prefix = ""
+		cfg.H2.Prefix = ""
+		cfg.H3.Prefix = ""
+		cfg.H4.Prefix = ""
+		cfg.H5.Prefix = ""
+		cfg.H6.Prefix = ""
+
 		r, err := glamour.NewTermRenderer(
-			glamour.WithStandardStyle("dark"),
+			glamour.WithStyles(cfg),
 			glamour.WithWordWrap(wrapWidth),
 		)
 		if err != nil {
@@ -917,38 +928,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 
 		sort.Slice(msg, func(i, j int) bool {
-			if msg[i].Lead != msg[j].Lead {
-				if msg[i].Lead == "" {
-					return true
-				}
-				if msg[j].Lead == "" {
-					return false
-				}
-				return msg[i].Lead < msg[j].Lead
-			}
 			return msg[i].PriorityScore > msg[j].PriorityScore
 		})
 
-		var expanded []core.ListItem
-		var currentLead string
-		first := true
-		for _, item := range msg {
-			if first || item.Lead != currentLead {
-				leadLabel := item.Lead
-				if leadLabel == "" {
-					leadLabel = "Unassigned (Me)"
-				}
-				expanded = append(expanded, core.ListItem{
-					ID:   "",
-					Name: "▶ Lead: " + leadLabel,
-				})
-				currentLead = item.Lead
-				first = false
-			}
-			expanded = append(expanded, item)
-		}
-
-		m.items = expanded
+		m.items = msg
 		m.populateTableRows()
 
 		// Watch every dossier directory so the dashboard live-refreshes on
@@ -1090,18 +1073,40 @@ type editorFinishedMsg struct {
 }
 
 // populateTableRows maps items into the table rows.
+func (m *Model) tableColumnsConfig() (showPriority, showNextAction, showStaleness bool) {
+	w := m.width
+	if w < 44 {
+		w = 44
+	}
+	return w >= 55, w >= 65, w >= 80
+}
+
 func (m *Model) populateTableRows() {
+	showPriority, showNextAction, showStaleness := m.tableColumnsConfig()
+
 	rows := make([]table.Row, 0, len(m.items))
 	for _, item := range m.items {
 		if item.ID == "" {
-			rows = append(rows, table.Row{
-				item.Name,
-				"",
-				"",
-				"",
-				"",
-			})
+			row := table.Row{item.Name, "", ""}
+			if showPriority {
+				row = append(row, "")
+			}
+			if showNextAction {
+				row = append(row, "")
+			}
+			if showStaleness {
+				row = append(row, "")
+			}
+			rows = append(rows, row)
 			continue
+		}
+
+		leadStr := item.Lead
+		if leadStr != "" {
+			parts := strings.Fields(leadStr)
+			if len(parts) > 1 {
+				leadStr = parts[0] + " " + string(parts[len(parts)-1][0])
+			}
 		}
 
 		statusStr := item.Status
@@ -1111,13 +1116,21 @@ func (m *Model) populateTableRows() {
 			stalenessStr = "today"
 		}
 
-		rows = append(rows, table.Row{
-			"  " + item.Name,
+		row := table.Row{
+			item.Name,
 			statusStr,
-			priorityStr,
-			item.NextAction,
-			stalenessStr,
-		})
+			leadStr,
+		}
+		if showPriority {
+			row = append(row, priorityStr)
+		}
+		if showNextAction {
+			row = append(row, item.NextAction)
+		}
+		if showStaleness {
+			row = append(row, stalenessStr)
+		}
+		rows = append(rows, row)
 	}
 	m.table.SetRows(rows)
 }
@@ -1130,23 +1143,48 @@ func (m *Model) recalculateTableLayout() {
 	}
 	m.table.SetHeight(tableHeight)
 
-	w := m.width
-	if w < 85 {
-		w = 85
+	showPriority, showNextAction, showStaleness := m.tableColumnsConfig()
+
+	cols := []table.Column{
+		{Title: "Name", Width: 18},
+		{Title: "Status", Width: 8},
+		{Title: "Lead", Width: 8},
+	}
+	usedWidth := 18 + 8 + 8
+	numCols := 3
+
+	if showPriority {
+		cols = append(cols, table.Column{Title: "Priority", Width: 8})
+		usedWidth += 8
+		numCols++
 	}
 
-	nextActionWidth := w - (22 + 10 + 8 + 10 + 10)
-	if nextActionWidth < 15 {
-		nextActionWidth = 15
+	if showNextAction {
+		nextActionWidth := 15
+		if showStaleness {
+			usedWidth += 8
+			numCols += 2
+			overhead := (numCols * 2) + (numCols - 1)
+			nextActionWidth = m.width - usedWidth - overhead
+			if nextActionWidth < 12 {
+				nextActionWidth = 12
+			}
+			cols = append(cols, table.Column{Title: "Next Action", Width: nextActionWidth})
+			cols = append(cols, table.Column{Title: "Staleness", Width: 8})
+		} else {
+			numCols++
+			overhead := (numCols * 2) + (numCols - 1)
+			nextActionWidth = m.width - usedWidth - overhead
+			if nextActionWidth < 12 {
+				nextActionWidth = 12
+			}
+			cols = append(cols, table.Column{Title: "Next Action", Width: nextActionWidth})
+		}
 	}
 
-	m.table.SetColumns([]table.Column{
-		{Title: "Name", Width: 22},
-		{Title: "Status", Width: 10},
-		{Title: "Priority", Width: 8},
-		{Title: "Next Action", Width: nextActionWidth},
-		{Title: "Staleness", Width: 10},
-	})
+	m.table.SetRows(nil) // Prevent panic from bubbles/table looping old rows against new columns
+	m.table.SetColumns(cols)
+	m.populateTableRows()
 }
 
 // recalculateViewportLayout fits the viewport to the screen.
@@ -1473,11 +1511,17 @@ func (m Model) View() string {
 		}
 
 		// Metadata Block
+		leadLabel := fm.Lead
+		if leadLabel == "" {
+			leadLabel = "Unassigned (Me)"
+		}
+
 		sb.WriteString(renderRow("Dossier:", fm.Name))
 		sb.WriteString(renderTwoCols(
 			"Status:", string(fm.Status),
-			"Priority:", fmt.Sprintf("Score %d (Importance: %s, Urgency: %s)", score, fm.Importance, fm.Urgency),
+			"Lead:", leadLabel,
 		))
+		sb.WriteString(renderRow("Priority:", fmt.Sprintf("Score %d (Importance: %s, Urgency: %s)", score, fm.Importance, fm.Urgency)))
 		sb.WriteString(renderRow("Tokens:", fmt.Sprintf("%d / %d", m.recallResult.TokenEstimate, targetTokens)))
 		sb.WriteString(renderRow("Next:", fm.NextAction))
 
