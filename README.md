@@ -48,7 +48,7 @@ Once `init` has run, Dossier works on its own:
 - **During the session**, the agent recalls, saves, searches, promotes, and switches Dossiers through MCP tools — nothing for you to remember. Switching binds *this* session (the MCP server resolves your Claude Code session automatically), so concurrent sessions can each follow a different Dossier without stepping on each other.
 - **At session end and before compaction**, hooks save the active Dossier so context isn't lost.
 
-A shipped **Distillation Guide** tells the agent *what* to keep; the hooks decide *when* to save. A **Resumption Protocol Skill** injected into Claude Code ensures the agent polls **Active Monitors** (live external links like Slack threads) upon resuming a session. There's no confirmation gate — trust comes from the fact that nothing is ever deleted (superseded content moves to the Archive and audit log) and every claim carries a source link.
+A shipped **Distillation Guide** tells the agent *what* to keep; the hooks decide *when* to save. To save tokens on your generic coding tasks, the guide isn't injected globally. Instead, Dossier uses **programmatic context injection**: the moment the agent binds a dossier via the MCP server, the server dynamically wraps its response payload with the full guide. A **Resumption Protocol Skill** injected into Claude Code ensures the agent polls **Active Monitors** (live external links like Slack threads) upon resuming a session. There's no confirmation gate — trust comes from the fact that nothing is ever deleted (superseded content moves to the Archive and audit log) and every claim carries a source link.
 
 ### From the command line
 
