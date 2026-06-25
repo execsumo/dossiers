@@ -791,43 +791,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "left", "h":
 				if m.priorityFocus == 0 {
 					m.editImportance = cycleImportance(m.editImportance, false)
-					m.loading = true
-					m.err = nil
-					return m, m.savePriorityCmd(m.targetID, m.targetBaseRevision, m.editImportance, m.editUrgency, m.dueDateInput.Value())
 				} else if m.priorityFocus == 1 {
 					m.editUrgency = cycleUrgency(m.editUrgency, false)
-					m.loading = true
-					m.err = nil
-					return m, m.savePriorityCmd(m.targetID, m.targetBaseRevision, m.editImportance, m.editUrgency, m.dueDateInput.Value())
 				}
 			case "right", "l":
 				if m.priorityFocus == 0 {
 					m.editImportance = cycleImportance(m.editImportance, true)
-					m.loading = true
-					m.err = nil
-					return m, m.savePriorityCmd(m.targetID, m.targetBaseRevision, m.editImportance, m.editUrgency, m.dueDateInput.Value())
 				} else if m.priorityFocus == 1 {
 					m.editUrgency = cycleUrgency(m.editUrgency, true)
-					m.loading = true
-					m.err = nil
-					return m, m.savePriorityCmd(m.targetID, m.targetBaseRevision, m.editImportance, m.editUrgency, m.dueDateInput.Value())
 				}
 			case "enter":
-				if m.priorityFocus == 0 {
-					m.editImportance = cycleImportance(m.editImportance, true)
-					m.loading = true
-					m.err = nil
-					return m, m.savePriorityCmd(m.targetID, m.targetBaseRevision, m.editImportance, m.editUrgency, m.dueDateInput.Value())
-				} else if m.priorityFocus == 1 {
-					m.editUrgency = cycleUrgency(m.editUrgency, true)
-					m.loading = true
-					m.err = nil
-					return m, m.savePriorityCmd(m.targetID, m.targetBaseRevision, m.editImportance, m.editUrgency, m.dueDateInput.Value())
-				} else if m.priorityFocus == 2 {
-					m.loading = true
-					m.err = nil
-					return m, m.savePriorityCmd(m.targetID, m.targetBaseRevision, m.editImportance, m.editUrgency, m.dueDateInput.Value())
-				}
+				m.loading = true
+				m.err = nil
+				return m, m.savePriorityCmd(m.targetID, m.targetBaseRevision, m.editImportance, m.editUrgency, m.dueDateInput.Value())
 			}
 
 			if m.priorityFocus == 2 {
