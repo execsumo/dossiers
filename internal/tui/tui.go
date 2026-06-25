@@ -195,7 +195,7 @@ type Model struct {
 	leadInput textinput.Model
 
 	// Priority Editor view state
-	priorityFocus  int // 0 = Importance, 1 = Urgency, 2 = Due Date, 3 = Save, 4 = Cancel
+	priorityFocus  int // 0 = Importance, 1 = Urgency, 2 = Due Date, 3 = Cancel
 	editImportance core.Importance
 	editUrgency    core.Urgency
 	dueDateInput   textinput.Model
@@ -768,21 +768,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.currentView = m.previousView
 				return m, nil
 			case "up", "k":
-				m.priorityFocus = (m.priorityFocus - 1 + 5) % 5
+				m.priorityFocus = (m.priorityFocus - 1 + 4) % 4
 				if m.priorityFocus == 2 {
 					m.dueDateInput.Focus()
 				} else {
 					m.dueDateInput.Blur()
 				}
 			case "down", "j", "tab":
-				m.priorityFocus = (m.priorityFocus + 1) % 5
+				m.priorityFocus = (m.priorityFocus + 1) % 4
 				if m.priorityFocus == 2 {
 					m.dueDateInput.Focus()
 				} else {
 					m.dueDateInput.Blur()
 				}
 			case "shift+tab":
-				m.priorityFocus = (m.priorityFocus - 1 + 5) % 5
+				m.priorityFocus = (m.priorityFocus - 1 + 4) % 4
 				if m.priorityFocus == 2 {
 					m.dueDateInput.Focus()
 				} else {
@@ -791,28 +791,43 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "left", "h":
 				if m.priorityFocus == 0 {
 					m.editImportance = cycleImportance(m.editImportance, false)
+					m.loading = true
+					m.err = nil
+					return m, m.savePriorityCmd(m.targetID, m.targetBaseRevision, m.editImportance, m.editUrgency, m.dueDateInput.Value())
 				} else if m.priorityFocus == 1 {
 					m.editUrgency = cycleUrgency(m.editUrgency, false)
+					m.loading = true
+					m.err = nil
+					return m, m.savePriorityCmd(m.targetID, m.targetBaseRevision, m.editImportance, m.editUrgency, m.dueDateInput.Value())
 				}
 			case "right", "l":
 				if m.priorityFocus == 0 {
 					m.editImportance = cycleImportance(m.editImportance, true)
+					m.loading = true
+					m.err = nil
+					return m, m.savePriorityCmd(m.targetID, m.targetBaseRevision, m.editImportance, m.editUrgency, m.dueDateInput.Value())
 				} else if m.priorityFocus == 1 {
 					m.editUrgency = cycleUrgency(m.editUrgency, true)
+					m.loading = true
+					m.err = nil
+					return m, m.savePriorityCmd(m.targetID, m.targetBaseRevision, m.editImportance, m.editUrgency, m.dueDateInput.Value())
 				}
 			case "enter":
 				if m.priorityFocus == 0 {
 					m.editImportance = cycleImportance(m.editImportance, true)
-				} else if m.priorityFocus == 1 {
-					m.editUrgency = cycleUrgency(m.editUrgency, true)
-				} else if m.priorityFocus == 2 {
-					m.priorityFocus = 3
-					m.dueDateInput.Blur()
-				} else if m.priorityFocus == 3 {
 					m.loading = true
 					m.err = nil
 					return m, m.savePriorityCmd(m.targetID, m.targetBaseRevision, m.editImportance, m.editUrgency, m.dueDateInput.Value())
-				} else if m.priorityFocus == 4 {
+				} else if m.priorityFocus == 1 {
+					m.editUrgency = cycleUrgency(m.editUrgency, true)
+					m.loading = true
+					m.err = nil
+					return m, m.savePriorityCmd(m.targetID, m.targetBaseRevision, m.editImportance, m.editUrgency, m.dueDateInput.Value())
+				} else if m.priorityFocus == 2 {
+					m.loading = true
+					m.err = nil
+					return m, m.savePriorityCmd(m.targetID, m.targetBaseRevision, m.editImportance, m.editUrgency, m.dueDateInput.Value())
+				} else if m.priorityFocus == 3 {
 					m.currentView = m.previousView
 					return m, nil
 				}
@@ -1340,17 +1355,14 @@ func (m Model) renderPriorityEditor() string {
 	sb.WriteString("\n\n")
 
 	// Buttons
-	saveBtn := "[ Save ]"
-	if m.priorityFocus == 3 {
-		saveBtn = focusedItemStyle.Render(saveBtn)
-	}
-
 	cancelBtn := "[ Cancel ]"
-	if m.priorityFocus == 4 {
+	if m.priorityFocus == 3 {
 		cancelBtn = focusedItemStyle.Render(cancelBtn)
 	}
-
-	sb.WriteString(fmt.Sprintf(" %s   %s", saveBtn, cancelBtn))
+	sb.WriteString(" ")
+	sb.WriteString(cancelBtn)
+	sb.WriteString("\n\n")
+	sb.WriteString("h/l/enter on Importance/Urgency to select & save • enter on Due Date to save • esc to cancel")
 
 	return editorBoxStyle.Render(sb.String())
 }

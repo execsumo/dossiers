@@ -361,22 +361,11 @@ func TestTUI_InlineEditing(t *testing.T) {
 	if m.currentView != ViewPriorityEditor {
 		t.Fatalf("expected view ViewPriorityEditor, got %v", m.currentView)
 	}
-	// Focus is initially 0 (Importance). Press down until Save button (focus 3) is focused
-	newM, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab}) // focus 1 (Urgency)
-	m = newM.(Model)
-	newM, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab}) // focus 2 (Due Date)
-	m = newM.(Model)
-	newM, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab}) // focus 3 (Save button)
-	m = newM.(Model)
-	if m.priorityFocus != 3 {
-		t.Fatalf("expected focus to be 3 (Save), got %d", m.priorityFocus)
-	}
-
-	// Press enter on Save button
+	// Focus is initially 0 (Importance). Hitting enter on Importance cycles/selects it and immediately triggers save.
 	newM, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = newM.(Model)
 	if cmd == nil {
-		t.Fatal("expected save enter to return save command")
+		t.Fatal("expected importance enter to trigger immediate save command")
 	}
 	mutMsg = cmd()
 	newM, cmd = m.Update(mutMsg)
