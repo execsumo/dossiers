@@ -864,8 +864,6 @@ func NewRootCmd() *cobra.Command {
 				switch importanceFlag {
 				case "h":
 					updates["importance"] = "high"
-				case "m":
-					updates["importance"] = "medium"
 				case "l":
 					updates["importance"] = "low"
 				default:
@@ -876,8 +874,6 @@ func NewRootCmd() *cobra.Command {
 				switch urgencyFlag {
 				case "h":
 					updates["urgency"] = "high"
-				case "m":
-					updates["urgency"] = "medium"
 				case "l":
 					updates["urgency"] = "low"
 				default:
@@ -900,8 +896,8 @@ func NewRootCmd() *cobra.Command {
 			fmt.Printf("Priority updated successfully. New revision: %s\n", res.Data.(core.Revision))
 		},
 	}
-	priorityCmd.Flags().StringVar(&importanceFlag, "importance", "", "Importance: h|m|l")
-	priorityCmd.Flags().StringVar(&urgencyFlag, "urgency", "", "Urgency: h|m|l")
+	priorityCmd.Flags().StringVar(&importanceFlag, "importance", "", "Importance: h|l")
+	priorityCmd.Flags().StringVar(&urgencyFlag, "urgency", "", "Urgency: h|l")
 	priorityCmd.Flags().StringVar(&dueFlag, "due", "", "Due date (YYYY-MM-DD or relative)")
 
 	updateCmd := &cobra.Command{

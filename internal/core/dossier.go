@@ -29,15 +29,14 @@ func (s Status) IsValid() bool {
 type Importance string
 
 const (
-	ImportanceHigh   Importance = "high"
-	ImportanceMedium Importance = "medium"
-	ImportanceLow    Importance = "low"
+	ImportanceHigh Importance = "high"
+	ImportanceLow  Importance = "low"
 )
 
 // IsValid validates if importance is one of the allowed enums.
 func (i Importance) IsValid() bool {
 	switch i {
-	case ImportanceHigh, ImportanceMedium, ImportanceLow:
+	case ImportanceHigh, ImportanceLow:
 		return true
 	}
 	return false
@@ -47,15 +46,14 @@ func (i Importance) IsValid() bool {
 type Urgency string
 
 const (
-	UrgencyHigh   Urgency = "high"
-	UrgencyMedium Urgency = "medium"
-	UrgencyLow    Urgency = "low"
+	UrgencyHigh Urgency = "high"
+	UrgencyLow  Urgency = "low"
 )
 
 // IsValid validates if urgency is one of the allowed enums.
 func (u Urgency) IsValid() bool {
 	switch u {
-	case UrgencyHigh, UrgencyMedium, UrgencyLow:
+	case UrgencyHigh, UrgencyLow:
 		return true
 	}
 	return false

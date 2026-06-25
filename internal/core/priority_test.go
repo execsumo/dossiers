@@ -14,36 +14,36 @@ func TestCalculatePriorityScore(t *testing.T) {
 		expectedScore int
 	}{
 		{
-			name: "Active, High Importance, High Urgency, No Due Date, No Staleness",
+			name: "High Importance, High Urgency",
 			fm: Frontmatter{
-				Importance:    ImportanceHigh,
-				Urgency:       UrgencyHigh,
-				Status:        StatusActive,
-				LastTouchedAt: now,
+				Importance: ImportanceHigh,
+				Urgency:    UrgencyHigh,
 			},
-			expectedScore: 60, // 30 + 30 + 0 + 0 + 0
+			expectedScore: 1,
 		},
 		{
-			name: "Blocked, Medium Importance, Low Urgency, Overdue, Stale 10 days",
+			name: "High Importance, Low Urgency",
 			fm: Frontmatter{
-				Importance:    ImportanceMedium,
-				Urgency:       UrgencyLow,
-				Status:        StatusBlocked,
-				DueDate:       "2026-06-10",
-				LastTouchedAt: now.AddDate(0, 0, -10),
+				Importance: ImportanceHigh,
+				Urgency:    UrgencyLow,
 			},
-			expectedScore: 80, // 15 + 5 + 10 + 40 + 10
+			expectedScore: 2,
 		},
 		{
-			name: "Waiting, Low Importance, Medium Urgency, Due Today, Stale 20 days",
+			name: "Low Importance, High Urgency",
 			fm: Frontmatter{
-				Importance:    ImportanceLow,
-				Urgency:       UrgencyMedium,
-				Status:        StatusWaiting,
-				DueDate:       "2026-06-14",
-				LastTouchedAt: now.AddDate(0, 0, -20),
+				Importance: ImportanceLow,
+				Urgency:    UrgencyHigh,
 			},
-			expectedScore: 74, // 5 + 15 + 5 + 35 + 14 (max staleness is 14)
+			expectedScore: 3,
+		},
+		{
+			name: "Low Importance, Low Urgency",
+			fm: Frontmatter{
+				Importance: ImportanceLow,
+				Urgency:    UrgencyLow,
+			},
+			expectedScore: 4,
 		},
 	}
 

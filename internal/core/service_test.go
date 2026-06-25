@@ -369,8 +369,8 @@ func TestDoctorReportsProvenanceAndConflictIssues(t *testing.T) {
 			UpdatedAt:     now,
 			LastTouchedAt: now,
 			Status:        StatusActive,
-			Importance:    ImportanceMedium,
-			Urgency:       UrgencyMedium,
+			Importance:    ImportanceLow,
+			Urgency:       UrgencyLow,
 		},
 		DistilledState: DistilledState{Body: "# Bad Dossier\n\n## Situation\nA material claim without provenance.\nAnother claim [src:art_missing]."},
 	}
@@ -415,8 +415,8 @@ func TestDoctorHealthyWithValidProvenance(t *testing.T) {
 			UpdatedAt:     now,
 			LastTouchedAt: now,
 			Status:        StatusActive,
-			Importance:    ImportanceMedium,
-			Urgency:       UrgencyMedium,
+			Importance:    ImportanceLow,
+			Urgency:       UrgencyLow,
 		},
 		DistilledState: DistilledState{Body: "# Good Dossier\n\n## Situation\nA supported material claim. [src:art_good]"},
 	}

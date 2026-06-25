@@ -36,7 +36,7 @@ func TestCLICommands(t *testing.T) {
 		LastTouchedAt: time.Now().Truncate(time.Second),
 		Status:        core.StatusActive,
 		Importance:    core.ImportanceHigh,
-		Urgency:       core.UrgencyMedium,
+		Urgency:       core.UrgencyLow,
 		NextAction:    "Compare revised scenarios",
 		OpenQuestions: []string{"Sales feedback?"},
 	}
@@ -507,7 +507,7 @@ func TestCLIMilestone7(t *testing.T) {
 
 	// 4. Test priority subcommand via Cobra
 	cmd = NewRootCmd()
-	cmd.SetArgs([]string{"priority", dossierID, "--importance", "h", "--urgency", "m", "--due", "2026-07-01", "--home", tempHome})
+	cmd.SetArgs([]string{"priority", dossierID, "--importance", "h", "--urgency", "l", "--due", "2026-07-01", "--home", tempHome})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("priority cmd execution failed: %v", err)
 	}
@@ -532,8 +532,8 @@ func TestCLIMilestone7(t *testing.T) {
 	if recall.Frontmatter.NextAction != "Do something next" {
 		t.Errorf("expected next_action 'Do something next', got %q", recall.Frontmatter.NextAction)
 	}
-	if recall.Frontmatter.Importance != core.ImportanceHigh || recall.Frontmatter.Urgency != core.UrgencyMedium {
-		t.Errorf("expected importance high, urgency medium; got %s/%s", recall.Frontmatter.Importance, recall.Frontmatter.Urgency)
+	if recall.Frontmatter.Importance != core.ImportanceHigh || recall.Frontmatter.Urgency != core.UrgencyLow {
+		t.Errorf("expected importance high, urgency low; got %s/%s", recall.Frontmatter.Importance, recall.Frontmatter.Urgency)
 	}
 	if recall.Frontmatter.DueDate != "2026-07-01" {
 		t.Errorf("expected due date '2026-07-01', got %q", recall.Frontmatter.DueDate)

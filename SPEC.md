@@ -722,31 +722,15 @@ The guide should include examples of good and bad distillation.
 ### 11.1 Priority Sort
 
 Default scoring:
+The importance and urgency dimensions map to a 1-4 Eisenhower matrix scale (where 1 is highest priority):
+- 1: High Importance, High Urgency ("1. Do")
+- 2: High Importance, Low Urgency ("2. Plan")
+- 3: Low Importance, High Urgency ("3. Delegate")
+- 4: Low Importance, Low Urgency ("4. Delete")
 
-```text
-importance: high=30, medium=15, low=5
-urgency: high=30, medium=15, low=5
-due_date:
-  overdue=40
-  due_today=35
-  due_soon_3_days=25
-  due_soon_7_days=15
-  none_or_later=0
-status:
-  blocked=10
-  waiting=5
-  active=0
-staleness:
-  min(days_since_last_touched, 14)
-```
+Priority score is strictly the Eisenhower matrix scale value (1-4).
 
-Priority score:
-
-```text
-importance + urgency + due_date + status + staleness
-```
-
-Sort descending by score, then oldest `last_touched_at`, then `updated_at`.
+Sort ascending by score, then oldest `last_touched_at`, then `updated_at`.
 
 Weights are configurable in `config.yaml`.
 

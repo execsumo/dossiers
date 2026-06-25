@@ -67,7 +67,7 @@ func TestFSStoreDossierLifecycle(t *testing.T) {
 		LastTouchedAt: now,
 		Status:        core.StatusActive,
 		Importance:    core.ImportanceHigh,
-		Urgency:       core.UrgencyMedium,
+		Urgency:       core.UrgencyLow,
 		NextAction:    "Compare revised pricing scenarios",
 		OpenQuestions: []string{"Does Sales prefer usage-tier?"},
 	}
@@ -222,8 +222,8 @@ func TestFSStoreArtifactWriteAdvancesRevisionAndPreservesHistory(t *testing.T) {
 			UpdatedAt:     now,
 			LastTouchedAt: now,
 			Status:        core.StatusActive,
-			Importance:    core.ImportanceMedium,
-			Urgency:       core.UrgencyMedium,
+			Importance:    core.ImportanceLow,
+			Urgency:       core.UrgencyLow,
 		},
 		DistilledState: core.DistilledState{Body: "# Artifact Revision\n\n## Situation\nBody before artifact."},
 	}

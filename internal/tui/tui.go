@@ -575,7 +575,7 @@ func (m *Model) startMergeSelector(sourceID, sourceName string) {
 }
 
 func cycleImportance(curr core.Importance, forward bool) core.Importance {
-	opts := []core.Importance{core.ImportanceHigh, core.ImportanceMedium, core.ImportanceLow}
+	opts := []core.Importance{core.ImportanceHigh, core.ImportanceLow}
 	idx := -1
 	for i, o := range opts {
 		if o == curr {
@@ -584,7 +584,7 @@ func cycleImportance(curr core.Importance, forward bool) core.Importance {
 		}
 	}
 	if idx == -1 {
-		return core.ImportanceMedium
+		return core.ImportanceLow
 	}
 	if forward {
 		return opts[(idx+1)%len(opts)]
@@ -593,7 +593,7 @@ func cycleImportance(curr core.Importance, forward bool) core.Importance {
 }
 
 func cycleUrgency(curr core.Urgency, forward bool) core.Urgency {
-	opts := []core.Urgency{core.UrgencyHigh, core.UrgencyMedium, core.UrgencyLow}
+	opts := []core.Urgency{core.UrgencyHigh, core.UrgencyLow}
 	idx := -1
 	for i, o := range opts {
 		if o == curr {
@@ -602,7 +602,7 @@ func cycleUrgency(curr core.Urgency, forward bool) core.Urgency {
 		}
 	}
 	if idx == -1 {
-		return core.UrgencyMedium
+		return core.UrgencyLow
 	}
 	if forward {
 		return opts[(idx+1)%len(opts)]
@@ -928,7 +928,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 
 		sort.Slice(msg, func(i, j int) bool {
-			return msg[i].PriorityScore > msg[j].PriorityScore
+			return msg[i].PriorityScore < msg[j].PriorityScore
 		})
 
 		m.items = msg
@@ -1073,7 +1073,7 @@ type editorFinishedMsg struct {
 }
 
 // populateTableRows maps items into the table rows.
-func (m *Model) tableColumnsConfig() (showPriority, showNextAction, showStaleness bool) {
+func (m *Model) tableColumnsConfig() (showPriority, showNextAction, showDue bool) {
 	w := m.width
 	if w < 44 {
 		w = 44
@@ -1082,7 +1082,7 @@ func (m *Model) tableColumnsConfig() (showPriority, showNextAction, showStalenes
 }
 
 func (m *Model) populateTableRows() {
-	showPriority, showNextAction, showStaleness := m.tableColumnsConfig()
+	showPriority, showNextAction, showDue := m.tableColumnsConfig()
 
 	rows := make([]table.Row, 0, len(m.items))
 	for _, item := range m.items {
@@ -1094,7 +1094,7 @@ func (m *Model) populateTableRows() {
 			if showNextAction {
 				row = append(row, "")
 			}
-			if showStaleness {
+			if showDue {
 				row = append(row, "")
 			}
 			rows = append(rows, row)
@@ -1110,10 +1110,28 @@ func (m *Model) populateTableRows() {
 		}
 
 		statusStr := item.Status
-		priorityStr := strconv.Itoa(item.PriorityScore)
-		stalenessStr := fmt.Sprintf("%dd ago", item.StalenessDays)
-		if item.StalenessDays == 0 {
-			stalenessStr = "today"
+		var priorityStr string
+		switch item.PriorityScore {
+		case 1:
+			priorityStr = "1. Do"
+		case 2:
+			priorityStr = "2. Plan"
+		case 3:
+			priorityStr = "3. Delegate"
+		case 4:
+			priorityStr = "4. Delete"
+		default:
+			priorityStr = strconv.Itoa(item.PriorityScore)
+		}
+
+		dueStr := ""
+		if item.DueDate != "" {
+			t, err := time.Parse("2006-01-02", item.DueDate)
+			if err == nil {
+				dueStr = t.Format("01/02")
+			} else {
+				dueStr = item.DueDate
+			}
 		}
 
 		row := table.Row{
@@ -1127,8 +1145,8 @@ func (m *Model) populateTableRows() {
 		if showNextAction {
 			row = append(row, item.NextAction)
 		}
-		if showStaleness {
-			row = append(row, stalenessStr)
+		if showDue {
+			row = append(row, dueStr)
 		}
 		rows = append(rows, row)
 	}
@@ -1143,7 +1161,7 @@ func (m *Model) recalculateTableLayout() {
 	}
 	m.table.SetHeight(tableHeight)
 
-	showPriority, showNextAction, showStaleness := m.tableColumnsConfig()
+	showPriority, showNextAction, showDue := m.tableColumnsConfig()
 
 	cols := []table.Column{
 		{Title: "Name", Width: 18},
@@ -1154,14 +1172,14 @@ func (m *Model) recalculateTableLayout() {
 	numCols := 3
 
 	if showPriority {
-		cols = append(cols, table.Column{Title: "Priority", Width: 8})
-		usedWidth += 8
+		cols = append(cols, table.Column{Title: "Priority", Width: 12})
+		usedWidth += 12
 		numCols++
 	}
 
 	if showNextAction {
 		nextActionWidth := 15
-		if showStaleness {
+		if showDue {
 			usedWidth += 8
 			numCols += 2
 			overhead := (numCols * 2) + (numCols - 1)
@@ -1170,7 +1188,7 @@ func (m *Model) recalculateTableLayout() {
 				nextActionWidth = 12
 			}
 			cols = append(cols, table.Column{Title: "Next Action", Width: nextActionWidth})
-			cols = append(cols, table.Column{Title: "Staleness", Width: 8})
+			cols = append(cols, table.Column{Title: "Due", Width: 8})
 		} else {
 			numCols++
 			overhead := (numCols * 2) + (numCols - 1)
@@ -1266,7 +1284,7 @@ func (m Model) renderPriorityEditor() string {
 
 	// Importance
 	sb.WriteString(" Importance: ")
-	impOpts := []core.Importance{core.ImportanceHigh, core.ImportanceMedium, core.ImportanceLow}
+	impOpts := []core.Importance{core.ImportanceHigh, core.ImportanceLow}
 	var impStr []string
 	for _, o := range impOpts {
 		val := string(o)
@@ -1288,7 +1306,7 @@ func (m Model) renderPriorityEditor() string {
 
 	// Urgency
 	sb.WriteString(" Urgency:    ")
-	urgOpts := []core.Urgency{core.UrgencyHigh, core.UrgencyMedium, core.UrgencyLow}
+	urgOpts := []core.Urgency{core.UrgencyHigh, core.UrgencyLow}
 	var urgStr []string
 	for _, o := range urgOpts {
 		val := string(o)

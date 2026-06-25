@@ -17,7 +17,7 @@ func TestCalculateRevision(t *testing.T) {
 		LastTouchedAt: now,
 		Status:        StatusActive,
 		Importance:    ImportanceHigh,
-		Urgency:       UrgencyMedium,
+		Urgency:       UrgencyLow,
 		NextAction:    "Next step",
 		OpenQuestions: []string{"Q1?", "Q2?"},
 	}

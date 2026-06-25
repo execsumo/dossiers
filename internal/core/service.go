@@ -567,8 +567,8 @@ func (s *Service) Save(ctx context.Context, req SaveReq) (Result, error) {
 		d = &Dossier{
 			Frontmatter: Frontmatter{
 				Status:     StatusActive,
-				Importance: ImportanceMedium,
-				Urgency:    UrgencyMedium,
+				Importance: ImportanceLow,
+				Urgency:    UrgencyLow,
 			},
 		}
 	} else {
@@ -1030,7 +1030,7 @@ func (s *Service) List(ctx context.Context, req ListReq) (Result, error) {
 
 	sort.Slice(scored, func(i, j int) bool {
 		if scored[i].score != scored[j].score {
-			return scored[i].score > scored[j].score
+			return scored[i].score < scored[j].score
 		}
 		if !scored[i].fm.LastTouchedAt.Equal(scored[j].fm.LastTouchedAt) {
 			return scored[i].fm.LastTouchedAt.Before(scored[j].fm.LastTouchedAt)
@@ -1115,10 +1115,10 @@ func (s *Service) ContextRefresh(ctx context.Context) (Result, error) {
 		}
 	}
 
-	// Sort open dossiers by priority score descending
+	// Sort open dossiers by priority score ascending
 	sort.Slice(scored, func(i, j int) bool {
 		if scored[i].score != scored[j].score {
-			return scored[i].score > scored[j].score
+			return scored[i].score < scored[j].score
 		}
 		if !scored[i].fm.LastTouchedAt.Equal(scored[j].fm.LastTouchedAt) {
 			return scored[i].fm.LastTouchedAt.Before(scored[j].fm.LastTouchedAt)
@@ -1347,7 +1347,7 @@ func (s *Service) SessionStart(ctx context.Context, sessionID string) (string, e
 	}
 	sort.Slice(scored, func(i, j int) bool {
 		if scored[i].score != scored[j].score {
-			return scored[i].score > scored[j].score
+			return scored[i].score < scored[j].score
 		}
 		if !scored[i].fm.LastTouchedAt.Equal(scored[j].fm.LastTouchedAt) {
 			return scored[i].fm.LastTouchedAt.Before(scored[j].fm.LastTouchedAt)
