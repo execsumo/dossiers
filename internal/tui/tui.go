@@ -411,10 +411,11 @@ func (m Model) mergeCmd(sourceID, targetID string, resolved []string) tea.Cmd {
 	}
 }
 
-func (m Model) setStatusCmd(id string, status core.Status) tea.Cmd {
+func (m Model) setStatusCmd(id string, baseRev core.Revision, status core.Status) tea.Cmd {
 	return func() tea.Msg {
 		_, err := m.svc.Save(context.Background(), core.SaveReq{
 			ID:                 id,
+			BaseRevision:       baseRev,
 			FrontmatterUpdates: map[string]any{"status": string(status)},
 		})
 		return mutationResultMsg{err: err, prevView: m.previousView, targetID: id}
@@ -432,10 +433,11 @@ func (m Model) saveNextActionCmd(id string, baseRev core.Revision, nextAction st
 	}
 }
 
-func (m Model) saveLeadCmd(id string, lead string) tea.Cmd {
+func (m Model) saveLeadCmd(id string, baseRev core.Revision, lead string) tea.Cmd {
 	return func() tea.Msg {
 		_, err := m.svc.Save(context.Background(), core.SaveReq{
 			ID:                 id,
+			BaseRevision:       baseRev,
 			FrontmatterUpdates: map[string]any{"lead": lead},
 		})
 		return mutationResultMsg{err: err, prevView: m.previousView, targetID: id}
@@ -741,7 +743,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				m.loading = true
 				m.err = nil
-				return m, m.saveLeadCmd(m.targetID, m.leadInput.Value())
+				return m, m.saveLeadCmd(m.targetID, m.targetBaseRevision, m.leadInput.Value())
 			}
 			m.leadInput, cmd = m.leadInput.Update(msg)
 			return m, cmd
@@ -758,7 +760,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				m.loading = true
 				m.err = nil
-				return m, m.setStatusCmd(m.targetID, m.statusOptions[m.statusCursor])
+				return m, m.setStatusCmd(m.targetID, m.targetBaseRevision, m.statusOptions[m.statusCursor])
 			}
 			return m, nil
 
@@ -962,9 +964,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.recalculateViewportLayout()
 			m.viewport.YOffset = 0
 
-			// Recall returns the dossier's directory path; make sure it's watched
-			// so the detail view live-refreshes on external edits.
-			m.ensureWatch(m.recallResult.Path)
+			// Recall returns the dossier's directory path; sync watches including
+			// the new path and any currently listed dashboard items to prevent leaks
+			// from navigating deep into links.
+			var watchPaths []string
+			for _, item := range m.items {
+				if item.Path != "" {
+					watchPaths = append(watchPaths, item.Path)
+				}
+			}
+			watchPaths = append(watchPaths, m.recallResult.Path)
+			m.syncWatches(watchPaths)
 		}
 
 	case linkResultMsg:

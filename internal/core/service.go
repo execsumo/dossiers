@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -1410,53 +1411,29 @@ func (s *Service) SessionStart(ctx context.Context, sessionID string) (string, e
 		}
 	}
 
-	harnessName := "CLI"
-	if activeHarness != nil {
-		harnessName = displayHarnessName(activeHarness.Name())
-	}
-
-	mcpAvail := "unavailable"
-	startAvail := "unavailable"
-	endAvail := "unavailable"
-	compactionAvail := "unavailable"
-	transcriptAvail := "unavailable"
-
-	if activeCaps.MCP {
-		mcpAvail = "available"
-	}
-	if activeCaps.SessionStartHook {
-		startAvail = "available"
-	}
-	if activeCaps.SessionEndHook {
-		endAvail = "available"
-	}
-	if activeCaps.PreCompactionHook {
-		compactionAvail = "available"
-	}
-	if activeCaps.TranscriptCapture {
-		transcriptAvail = "available"
-	}
-
 	var sb strings.Builder
 	sb.WriteString("# Dossier Library\n\n")
-	sb.WriteString(fmt.Sprintf("Harness: %s\n", harnessName))
-	sb.WriteString("Capabilities:\n")
-	sb.WriteString(fmt.Sprintf("- MCP: %s\n", mcpAvail))
-	sb.WriteString(fmt.Sprintf("- Session-start hook: %s\n", startAvail))
-	sb.WriteString(fmt.Sprintf("- Session-end save hook: %s\n", endAvail))
-	sb.WriteString(fmt.Sprintf("- Pre-compaction save hook: %s\n", compactionAvail))
-	sb.WriteString(fmt.Sprintf("- Transcript capture: %s\n\n", transcriptAvail))
 
 	if activeHarness != nil && !activeCaps.TranscriptCapture {
 		sb.WriteString("Warning: Transcript archive is unavailable in this session.\n\n")
 	}
 
-	sb.WriteString("Open Dossiers:\n")
+	sb.WriteString("The following dossiers are available to resume work on:\n")
 	sb.WriteString(openStr)
 	sb.WriteString("\n\n")
 
 	sb.WriteString("Distillation Guide:\n")
-	sb.WriteString("See: ~/.dossier/context/guide.md\n\n")
+	if activeDossierID != "" {
+		guidePath := filepath.Join(s.cfg.DossierHome, "context", "guide.md")
+		if guideBytes, err := os.ReadFile(guidePath); err == nil {
+			sb.WriteString(string(guideBytes))
+			sb.WriteString("\n\n")
+		} else {
+			sb.WriteString("See: ~/.dossier/context/guide.md\n\n")
+		}
+	} else {
+		sb.WriteString("See: ~/.dossier/context/guide.md\n\n")
+	}
 
 	if activeDossierID != "" {
 		recallRes, err := s.Recall(ctx, RecallReq{ID: activeDossierID})

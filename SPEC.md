@@ -641,16 +641,9 @@ When supported, session start injection includes:
 ```markdown
 # Dossier Library
 
-Harness: Claude Code
-Capabilities:
-- MCP: available
-- Session-start hook: available
-- Session-end save hook: unavailable
-- Transcript capture: unavailable
-
 Warning: Transcript archive is unavailable in this session.
 
-Open Dossiers:
+The following dossiers are available to resume work on:
 ...
 
 Distillation Guide:
