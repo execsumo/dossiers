@@ -440,8 +440,8 @@ func TestTUI_Link(t *testing.T) {
 	newM, _ := m.Update(listMsg)
 	m = newM.(Model)
 
-	// Press 'l' key to link
-	newM, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	// Press 'k' key to link
+	newM, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
 	m = newM.(Model)
 	if m.currentView != ViewLinkInput {
 		t.Fatalf("expected view ViewLinkInput, got %v", m.currentView)

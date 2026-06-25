@@ -860,7 +860,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.startEditNextAction(t)
 				return m, nil
 			}
-		case "a":
+		case "l":
 			if t, ok := m.getTargetDossier(); ok && t.id != "" {
 				m.startEditLead(t)
 				return m, nil
@@ -882,7 +882,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return editorFinishedMsg{err: err, id: m.recallResult.Frontmatter.ID}
 				})
 			}
-		case "l":
+		case "k":
 			if m.currentView == ViewDashboard {
 				m.startLinkInput()
 				return m, nil
@@ -1083,7 +1083,7 @@ func (m *Model) tableColumnsConfig() (showPriority, showNextAction, showDue bool
 	if w < 44 {
 		w = 44
 	}
-	return w >= 55, w >= 65, w >= 80
+	return w >= 55, w >= 80, w >= 65
 }
 
 func (m *Model) populateTableRows() {
@@ -1177,32 +1177,31 @@ func (m *Model) recalculateTableLayout() {
 	numCols := 3
 
 	if showPriority {
-		cols = append(cols, table.Column{Title: "Priority", Width: 12})
 		usedWidth += 12
 		numCols++
 	}
-
+	if showDue {
+		usedWidth += 8
+		numCols++
+	}
 	if showNextAction {
-		nextActionWidth := 15
-		if showDue {
-			usedWidth += 8
-			numCols += 2
-			overhead := (numCols * 2) + (numCols - 1)
-			nextActionWidth = m.width - usedWidth - overhead
-			if nextActionWidth < 12 {
-				nextActionWidth = 12
-			}
-			cols = append(cols, table.Column{Title: "Next Action", Width: nextActionWidth})
-			cols = append(cols, table.Column{Title: "Due", Width: 8})
-		} else {
-			numCols++
-			overhead := (numCols * 2) + (numCols - 1)
-			nextActionWidth = m.width - usedWidth - overhead
-			if nextActionWidth < 12 {
-				nextActionWidth = 12
-			}
-			cols = append(cols, table.Column{Title: "Next Action", Width: nextActionWidth})
+		numCols++
+	}
+
+	overhead := (numCols * 2) + (numCols - 1)
+
+	if showPriority {
+		cols = append(cols, table.Column{Title: "Priority", Width: 12})
+	}
+	if showNextAction {
+		nextActionWidth := m.width - usedWidth - overhead
+		if nextActionWidth < 12 {
+			nextActionWidth = 12
 		}
+		cols = append(cols, table.Column{Title: "Next Action", Width: nextActionWidth})
+	}
+	if showDue {
+		cols = append(cols, table.Column{Title: "Due", Width: 8})
 	}
 
 	m.table.SetRows(nil) // Prevent panic from bubbles/table looping old rows against new columns
@@ -1603,10 +1602,10 @@ func (m Model) View() string {
 		}
 	}
 
-	keyHelp := "↑/↓: select • enter: detail • s: status • a: lead • p: priority • n: next action • l: link • m: merge • q: quit"
+	keyHelp := "↑/↓: select • enter: detail • s: status • l: lead • p: priority • n: next action • k: link • m: merge • q: quit"
 	switch m.currentView {
 	case ViewDetail:
-		keyHelp = "↑/↓/pgup/pgdn: scroll • s: status • a: lead • p: priority • n: next action • esc: back • q: quit"
+		keyHelp = "↑/↓/pgup/pgdn: scroll • s: status • l: lead • p: priority • n: next action • esc: back • q: quit"
 	case ViewStatusPicker:
 		keyHelp = "↑/↓: select status • enter: confirm • esc: cancel"
 	case ViewNextActionEditor:
