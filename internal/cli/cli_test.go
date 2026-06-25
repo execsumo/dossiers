@@ -252,8 +252,8 @@ func TestCLIMilestone3(t *testing.T) {
 	}
 	libContent := string(libBytes)
 
-	if !strings.Contains(libContent, "Harness:") {
-		t.Errorf("expected Harness: header in library.md, got:\n%s", libContent)
+	if !strings.Contains(libContent, "# Dossier Library") {
+		t.Errorf("expected # Dossier Library header in library.md, got:\n%s", libContent)
 	}
 	if !strings.Contains(libContent, "Chainlink core engine") {
 		t.Errorf("expected 'Chainlink core engine' in library.md, got:\n%s", libContent)

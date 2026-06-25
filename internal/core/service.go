@@ -1458,6 +1458,14 @@ func (s *Service) SessionStart(ctx context.Context, sessionID string) (string, e
 	return sb.String(), nil
 }
 
+func (s *Service) GetGuide() string {
+	guidePath := filepath.Join(s.cfg.DossierHome, "context", "guide.md")
+	if guideBytes, err := os.ReadFile(guidePath); err == nil {
+		return string(guideBytes)
+	}
+	return ""
+}
+
 // SessionEnd saves state and appends the transcript artifact on session completion.
 func (s *Service) SessionEnd(ctx context.Context, sessionID string, distilledState string, transcript string) error {
 	binding, err := s.store.GetSessionBinding(sessionID)

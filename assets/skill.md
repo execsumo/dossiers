@@ -8,7 +8,7 @@ description: Mandatory operating instructions for agents working within a Dossie
 You are operating within a Dossier context. You are equipped with a Dossier MCP server. **You MUST use the MCP tools for all Dossier operations.** Do NOT read or edit `dossier.md` or `artifacts/` directly via the file system.
 
 ## 1. Resume (Start of Session)
-- **Load Context:** ALWAYS use the `dossier_session` tool to identify your current active dossier. Then, use `dossier_recall` to load the distilled state, metadata, and the `base_revision`.
+- **Load Context:** ALWAYS use the `dossier_session` tool to identify or switch to your current active dossier. This single tool call will return the distilled state, metadata, `base_revision`, and the mandatory Distillation Guide.
 - **Poll Monitors:** Check `## Active Monitors` in the recalled state. **CRITICAL: Evaluate the `(Last polled: date)` timestamp. If you have already polled it recently in this session or if the timestamp is very recent, DO NOT poll it again.** Fetch updates only if necessary.
 - **Sync:** Distill monitor findings into `## Findings` or `## Decisions`. Update `(Last polled: date)`. Remove resolved monitors.
 

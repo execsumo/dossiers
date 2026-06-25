@@ -341,6 +341,16 @@ func (s *Server) handleToolCall(ctx context.Context, id any, name string, args j
 			} else {
 				res, err = s.svc.Active(ctx, core.ActiveReq{SessionID: sid})
 			}
+			if err == nil && res.OK {
+				type SessionResponse struct {
+					State interface{} `json:"state"`
+					Guide string      `json:"distillation_guide,omitempty"`
+				}
+				res.Data = SessionResponse{
+					State: res.Data,
+					Guide: s.svc.GetGuide(),
+				}
+			}
 		}
 
 	case "dossier_update":
