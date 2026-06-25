@@ -111,7 +111,7 @@ next_action: "Compare revised pricing scenarios with sales feedback."
 open_questions:
   - "Does Sales prefer account-tier or usage-tier packaging?"
 importance: high
-urgency: medium
+urgency: low
 due_date: 2026-06-21
 token_target: 100000
 base_revision: rev_01jz8example000000000000000
@@ -141,8 +141,8 @@ Optional fields:
 Valid enums:
 
 - `status`: `active`, `waiting`, `blocked`, `resolved`, `archived`
-- `importance`: `high`, `medium`, `low`
-- `urgency`: `high`, `medium`, `low`
+- `importance`: `high`, `low`
+- `urgency`: `high`, `low`
 
 Derived, not stored:
 
@@ -514,10 +514,10 @@ Output Dossier item:
   "next_action": "Compare revised pricing scenarios with sales feedback.",
   "open_questions": ["Does Sales prefer account-tier or usage-tier packaging?"],
   "importance": "high",
-  "urgency": "medium",
+  "urgency": "low",
   "due_date": "2026-06-21",
   "staleness_days": 2,
-  "priority_score": 87,
+  "priority_score": 2,
   "path": "/Users/me/.dossier/pricing-model-refresh",
   "warnings": ["Transcript archive unavailable in this session."]
 }

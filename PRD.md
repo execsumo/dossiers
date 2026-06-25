@@ -57,7 +57,7 @@ A distinct topic of work. Its distilled state lives in **one Markdown file** (D9
   - `status ∈ {active, blocked, waiting, resolved, archived}`
   - `lead` (string)
   - `next_action` (string), `open_questions` (list)
-  - `importance ∈ {high, medium, low}`, `urgency ∈ {high, medium, low}`, `due_date` (ISO date, optional)
+  - `importance ∈ {high, low}`, `urgency ∈ {high, low}`, `due_date` (ISO date, optional)
   - `staleness` is derived from `last_touched_at`, not stored.
 
   These prioritization fields feed surfacing (§4.1). Frontmatter is what the open-work view scans and what Obsidian-style readers render natively.
