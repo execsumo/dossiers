@@ -203,12 +203,12 @@ func (c *ClaudeCodeHarness) Install(opts core.InstallOpts) error {
 	if ci, ok := hooksConfigMap["customInstructions"]; ok {
 		if arr, ok := ci.([]any); ok {
 			for _, v := range arr {
-				if s, ok := v.(string); ok && strings.Contains(s, "Dossier Resumption Protocol") {
+				if s, ok := v.(string); ok && strings.Contains(s, "Dossier Operations") {
 					hasSkill = true
 					break
 				}
 			}
-		} else if s, ok := ci.(string); ok && strings.Contains(s, "Dossier Resumption Protocol") {
+		} else if s, ok := ci.(string); ok && strings.Contains(s, "Dossier Operations") {
 			hasSkill = true
 		}
 	}
@@ -265,7 +265,7 @@ func (c *ClaudeCodeHarness) Install(opts core.InstallOpts) error {
 
 		// Inject custom instruction for Dossier skill
 		if !hasSkill {
-			skillInstruction := "You must strictly follow the Dossier Resumption Protocol defined in ~/.dossier/context/skill.md"
+			skillInstruction := "You must strictly follow the Dossier Operations skill defined in ~/.dossier/context/skill.md"
 			var customInst []string
 			if ci, ok := hooksConfigMap["customInstructions"]; ok {
 				if arr, ok := ci.([]any); ok {

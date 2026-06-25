@@ -1,18 +1,23 @@
 ---
-name: Dossier Resumption Protocol
-description: Defines the protocol for agents to resume work on a dossier, specifically ensuring that Active Monitors are polled before taking action.
+name: Dossier Operations
+description: Mandatory operating instructions for agents working within a Dossier context.
 ---
 
-# Dossier Resumption Protocol
+# Dossier Operations
 
-You are operating within the context of a Dossier. Your goal is to seamlessly resume long-running work.
-Before executing new tasks or making updates to the project, you MUST perform the following resumption protocol:
+You are operating within a Dossier. You MUST follow these rules to maintain state and context integrity.
 
-1. **Load Dossier:** Read the current active `dossier.md` to establish context.
-2. **Poll Monitors:** Check the `## Active Monitors` section. If there are any live external context streams (like Jira tickets or Slack threads) listed:
-   - Use your available tools to fetch updates that occurred since the `Last polled` date.
-3. **Distill & Update:** If you found new information from the monitors:
-   - Distill this information into the `## Findings` or `## Decisions` section of the dossier, adhering to the Dossier Distillation Guide principles.
-   - Update the `Last polled` timestamp on the monitor entry.
-   - If the monitor is no longer relevant (e.g., the ticket is closed or thread resolved), archive any relevant findings and remove the monitor from the list.
-4. **Execute:** Proceed with the `## Next Steps` or the user's specific prompt request.
+## 1. Resume (Start of Session)
+- **Load Context:** Read `dossier.md` to establish baseline state.
+- **Poll Monitors:** Check `## Active Monitors`. Fetch updates for any listed external streams (Slack, Jira) using available tools.
+- **Sync:** Distill monitor findings into `## Findings` or `## Decisions`. Update `(Last polled: date)`. Remove resolved monitors.
+
+## 2. Execute & Distill (During Work)
+- **Archive First:** Do not summarize long transcripts or logs from memory. Save raw text to `artifacts/` first.
+- **Cite Sources:** Append `[src:art_<id>]` to every material claim, decision, or metric.
+- **Telegraphic Phrasing:** Write punchy, noun-heavy declarations. Strip conversational fluff (e.g., use "Test failed" instead of "I ran the test and it failed").
+- **Record Negative Space:** Log abandoned paths and failed experiments as `[Rejected]` findings to prevent repeated mistakes.
+
+## 3. Handoff (End of Work)
+- Keep `## Next Steps` immediately actionable.
+- Update `dossier.md` incrementally as tasks complete so the next agent can resume instantly if interrupted.
