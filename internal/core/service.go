@@ -1032,6 +1032,17 @@ func (s *Service) List(ctx context.Context, req ListReq) (Result, error) {
 		if scored[i].score != scored[j].score {
 			return scored[i].score < scored[j].score
 		}
+		d1 := scored[i].fm.DueDate
+		d2 := scored[j].fm.DueDate
+		if d1 != d2 {
+			if d1 == "" {
+				return false
+			}
+			if d2 == "" {
+				return true
+			}
+			return d1 < d2
+		}
 		if !scored[i].fm.LastTouchedAt.Equal(scored[j].fm.LastTouchedAt) {
 			return scored[i].fm.LastTouchedAt.Before(scored[j].fm.LastTouchedAt)
 		}
@@ -1119,6 +1130,17 @@ func (s *Service) ContextRefresh(ctx context.Context) (Result, error) {
 	sort.Slice(scored, func(i, j int) bool {
 		if scored[i].score != scored[j].score {
 			return scored[i].score < scored[j].score
+		}
+		d1 := scored[i].fm.DueDate
+		d2 := scored[j].fm.DueDate
+		if d1 != d2 {
+			if d1 == "" {
+				return false
+			}
+			if d2 == "" {
+				return true
+			}
+			return d1 < d2
 		}
 		if !scored[i].fm.LastTouchedAt.Equal(scored[j].fm.LastTouchedAt) {
 			return scored[i].fm.LastTouchedAt.Before(scored[j].fm.LastTouchedAt)
@@ -1348,6 +1370,17 @@ func (s *Service) SessionStart(ctx context.Context, sessionID string) (string, e
 	sort.Slice(scored, func(i, j int) bool {
 		if scored[i].score != scored[j].score {
 			return scored[i].score < scored[j].score
+		}
+		d1 := scored[i].fm.DueDate
+		d2 := scored[j].fm.DueDate
+		if d1 != d2 {
+			if d1 == "" {
+				return false
+			}
+			if d2 == "" {
+				return true
+			}
+			return d1 < d2
 		}
 		if !scored[i].fm.LastTouchedAt.Equal(scored[j].fm.LastTouchedAt) {
 			return scored[i].fm.LastTouchedAt.Before(scored[j].fm.LastTouchedAt)

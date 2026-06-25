@@ -198,7 +198,7 @@ func TestServiceListAndRecall(t *testing.T) {
 			"name":       "Pricing model refresh",
 			"status":     "active",
 			"importance": "high",
-			"urgency":    "medium",
+			"urgency":    "low",
 		},
 	}
 
@@ -453,4 +453,96 @@ func warningsText(warnings []Warning) string {
 		parts = append(parts, string(warning))
 	}
 	return strings.Join(parts, "\n")
+}
+
+func TestServiceListSorting(t *testing.T) {
+	fakeStore := newLocalFakeStore()
+	tok := &mockTokenizer{}
+	srch := &mockSearcher{}
+	hreg := &mockHarnessRegistry{}
+	now := time.Date(2026, 6, 14, 12, 0, 0, 0, time.UTC)
+	clk := &mockClock{now: now}
+	cfg := Config{DossierHome: "/tmp/dossier-test", TokenTarget: 100}
+
+	// Dossier A: Priority 2 (High, Low), Due 2026-07-05
+	fakeStore.dossiers["dos_a"] = &Dossier{
+		Frontmatter: Frontmatter{
+			ID:            "dos_a",
+			Name:          "Dossier A",
+			Slug:          "dossier-a",
+			Status:        StatusActive,
+			Importance:    ImportanceHigh,
+			Urgency:       UrgencyLow,
+			DueDate:       "2026-07-05",
+			CreatedAt:     now,
+			UpdatedAt:     now,
+			LastTouchedAt: now,
+		},
+	}
+	// Dossier B: Priority 1 (High, High), Due 2026-07-10
+	fakeStore.dossiers["dos_b"] = &Dossier{
+		Frontmatter: Frontmatter{
+			ID:            "dos_b",
+			Name:          "Dossier B",
+			Slug:          "dossier-b",
+			Status:        StatusActive,
+			Importance:    ImportanceHigh,
+			Urgency:       UrgencyHigh,
+			DueDate:       "2026-07-10",
+			CreatedAt:     now,
+			UpdatedAt:     now,
+			LastTouchedAt: now,
+		},
+	}
+	// Dossier C: Priority 2 (High, Low), Due 2026-07-01
+	fakeStore.dossiers["dos_c"] = &Dossier{
+		Frontmatter: Frontmatter{
+			ID:            "dos_c",
+			Name:          "Dossier C",
+			Slug:          "dossier-c",
+			Status:        StatusActive,
+			Importance:    ImportanceHigh,
+			Urgency:       UrgencyLow,
+			DueDate:       "2026-07-01",
+			CreatedAt:     now,
+			UpdatedAt:     now,
+			LastTouchedAt: now,
+		},
+	}
+	// Dossier D: Priority 2 (High, Low), No Due Date
+	fakeStore.dossiers["dos_d"] = &Dossier{
+		Frontmatter: Frontmatter{
+			ID:            "dos_d",
+			Name:          "Dossier D",
+			Slug:          "dossier-d",
+			Status:        StatusActive,
+			Importance:    ImportanceHigh,
+			Urgency:       UrgencyLow,
+			DueDate:       "",
+			CreatedAt:     now,
+			UpdatedAt:     now,
+			LastTouchedAt: now,
+		},
+	}
+
+	for _, d := range fakeStore.dossiers {
+		fakeStore.revisions[d.Frontmatter.ID] = CalculateRevision(d.Frontmatter, d.DistilledState.Body, nil)
+	}
+
+	svc := NewService(fakeStore, srch, tok, hreg, clk, cfg)
+	listRes, err := svc.List(context.Background(), ListReq{})
+	if err != nil {
+		t.Fatalf("Service.List failed: %v", err)
+	}
+	items := listRes.Data.([]ListItem)
+	if len(items) != 4 {
+		t.Fatalf("expected 4 items, got %d", len(items))
+	}
+
+	expectedOrder := []string{"dos_b", "dos_c", "dos_a", "dos_d"}
+	for i, expectedID := range expectedOrder {
+		if items[i].ID != expectedID {
+			t.Errorf("at index %d: expected %s, got %s", i, expectedID, items[i].ID)
+		}
+	}
 }

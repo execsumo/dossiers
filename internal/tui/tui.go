@@ -231,9 +231,9 @@ func NewModel(svc *core.Service) Model {
 		{Title: "Name", Width: 18},
 		{Title: "Status", Width: 8},
 		{Title: "Lead", Width: 8},
-		{Title: "Priority", Width: 8},
+		{Title: "Priority", Width: 12},
 		{Title: "Next Action", Width: 13},
-		{Title: "Staleness", Width: 8},
+		{Title: "Due", Width: 8},
 	}
 
 	t := table.New(
@@ -916,11 +916,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 
 		sort.Slice(msg, func(i, j int) bool {
-			return msg[i].PriorityScore < msg[j].PriorityScore
+			if msg[i].PriorityScore != msg[j].PriorityScore {
+				return msg[i].PriorityScore < msg[j].PriorityScore
+			}
+			d1 := msg[i].DueDate
+			d2 := msg[j].DueDate
+			if d1 != d2 {
+				if d1 == "" {
+					return false
+				}
+				if d2 == "" {
+					return true
+				}
+				return d1 < d2
+			}
+			return false
 		})
 
 		m.items = msg
 		m.populateTableRows()
+		if len(msg) > 0 {
+			m.table.SetCursor(0)
+		}
 
 		// Watch every dossier directory so the dashboard live-refreshes on
 		// external edits, plus the currently open dossier if it isn't listed.
