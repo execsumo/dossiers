@@ -164,7 +164,14 @@ func (s *Service) Doctor(ctx context.Context) (Result, error) {
 
 	for _, fm := range fms {
 		report.DossiersChecked++
-		if err := fm.Validate(); err != nil {
+		// Report legacy/invalid enum values as healable rather than fatal: they
+		// are coerced toward attention on the next write. Anything still invalid
+		// after normalization (e.g. a missing id or name) is a real problem.
+		normalized := fm
+		for _, fix := range normalized.Normalize() {
+			addIssue("Dossier %s has legacy %s %q; it will heal to %q on next edit.", fm.ID, fix.Field, fix.From, fix.To)
+		}
+		if err := normalized.Validate(); err != nil {
 			addIssue("Dossier %s has invalid frontmatter: %v", fm.ID, err)
 		}
 
@@ -219,6 +226,71 @@ func (s *Service) Doctor(ctx context.Context) (Result, error) {
 
 	return Result{
 		OK:       len(warnings) == 0,
+		Data:     report,
+		Warnings: warnings,
+	}, nil
+}
+
+// CurrentSchemaVersion is the frontmatter schema version this build expects.
+// Bump it whenever Frontmatter.Normalize gains a rule that should be applied
+// eagerly to existing stores; the startup sweep runs once when the store's
+// recorded version is older than this.
+const CurrentSchemaVersion = 1
+
+// MigrateReport summarizes a one-time frontmatter migration sweep.
+type MigrateReport struct {
+	DossiersScanned int `json:"dossiers_scanned"`
+	DossiersHealed  int `json:"dossiers_healed"`
+}
+
+// Migrate normalizes every Dossier's frontmatter to the current schema and
+// rewrites the ones that changed. It is the eager, store-wide counterpart to the
+// lazy heal that Save performs on a single Dossier: idempotent (re-running over
+// an already-canonical store is a no-op), non-destructive (rewrites go through
+// the audited Write path), and safe to run on an empty store. Each coercion is
+// reported as a Warning so the migration is never silent.
+func (s *Service) Migrate(ctx context.Context) (Result, error) {
+	if s.store == nil {
+		return Result{OK: false}, NewError(ErrInternal, "store not configured")
+	}
+
+	report := MigrateReport{}
+	var warnings []Warning
+
+	fms, err := s.store.List("all")
+	if err != nil {
+		return Result{OK: false}, err
+	}
+
+	for _, fm := range fms {
+		report.DossiersScanned++
+
+		d, rev, err := s.store.Read(fm.ID)
+		if err != nil {
+			warnings = append(warnings, Warning(fmt.Sprintf("Dossier %s could not be read during migration: %v", fm.ID, err)))
+			continue
+		}
+
+		fixes := d.Frontmatter.Normalize()
+		if len(fixes) == 0 {
+			continue
+		}
+
+		if _, err := s.store.Write(d, rev); err != nil {
+			warnings = append(warnings, Warning(fmt.Sprintf("Dossier %s could not be healed during migration: %v", fm.ID, err)))
+			continue
+		}
+
+		report.DossiersHealed++
+		for _, fix := range fixes {
+			warnings = append(warnings, Warning(fmt.Sprintf(
+				"Dossier %s: coerced %s %q -> %q for backward compatibility (mapping toward attention).",
+				fm.ID, fix.Field, fix.From, fix.To)))
+		}
+	}
+
+	return Result{
+		OK:       true,
 		Data:     report,
 		Warnings: warnings,
 	}, nil
@@ -694,6 +766,17 @@ func (s *Service) Save(ctx context.Context, req SaveReq) (Result, error) {
 
 	d.Frontmatter.LastTouchedAt = s.clock.Now()
 
+	// Backward compatibility: heal any legacy/invalid frontmatter (e.g. a value
+	// from a removed enum, or a field absent in an older build) before the write
+	// path validates it. The coercion is persisted (the file self-heals) and
+	// surfaced as a warning so it is never silent.
+	var warnings []Warning
+	for _, fix := range d.Frontmatter.Normalize() {
+		warnings = append(warnings, Warning(fmt.Sprintf(
+			"Coerced %s %q -> %q for backward compatibility (mapping toward attention).",
+			fix.Field, fix.From, fix.To)))
+	}
+
 	newRev, err := s.store.Write(d, baseRev)
 	if err != nil {
 		return Result{}, err
@@ -741,8 +824,9 @@ func (s *Service) Save(ctx context.Context, req SaveReq) (Result, error) {
 	_ = s.store.AppendAudit(d.Frontmatter.ID, event)
 
 	return Result{
-		OK:   true,
-		Data: newRev,
+		OK:       true,
+		Data:     newRev,
+		Warnings: warnings,
 	}, nil
 }
 

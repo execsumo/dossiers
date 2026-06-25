@@ -12,6 +12,11 @@ import (
 type Config struct {
 	DossierHome string `yaml:"dossier_home"`
 	TokenTarget int    `yaml:"token_target"`
+	// SchemaVersion records the frontmatter schema the store was last migrated to.
+	// It is intentionally left at its zero value in Default so that a config file
+	// written by an older build (which lacks the key) is detected as stale and
+	// triggers the one-time migration sweep on the next launch.
+	SchemaVersion int `yaml:"schema_version"`
 }
 
 // Default returns the default configuration with standard paths.
