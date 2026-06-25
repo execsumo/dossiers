@@ -195,7 +195,7 @@ type Model struct {
 	leadInput textinput.Model
 
 	// Priority Editor view state
-	priorityFocus  int // 0 = Importance, 1 = Urgency, 2 = Due Date, 3 = Cancel
+	priorityFocus  int // 0 = Importance, 1 = Urgency, 2 = Due Date
 	editImportance core.Importance
 	editUrgency    core.Urgency
 	dueDateInput   textinput.Model
@@ -768,21 +768,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.currentView = m.previousView
 				return m, nil
 			case "up", "k":
-				m.priorityFocus = (m.priorityFocus - 1 + 4) % 4
+				m.priorityFocus = (m.priorityFocus - 1 + 3) % 3
 				if m.priorityFocus == 2 {
 					m.dueDateInput.Focus()
 				} else {
 					m.dueDateInput.Blur()
 				}
 			case "down", "j", "tab":
-				m.priorityFocus = (m.priorityFocus + 1) % 4
+				m.priorityFocus = (m.priorityFocus + 1) % 3
 				if m.priorityFocus == 2 {
 					m.dueDateInput.Focus()
 				} else {
 					m.dueDateInput.Blur()
 				}
 			case "shift+tab":
-				m.priorityFocus = (m.priorityFocus - 1 + 4) % 4
+				m.priorityFocus = (m.priorityFocus - 1 + 3) % 3
 				if m.priorityFocus == 2 {
 					m.dueDateInput.Focus()
 				} else {
@@ -827,9 +827,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.loading = true
 					m.err = nil
 					return m, m.savePriorityCmd(m.targetID, m.targetBaseRevision, m.editImportance, m.editUrgency, m.dueDateInput.Value())
-				} else if m.priorityFocus == 3 {
-					m.currentView = m.previousView
-					return m, nil
 				}
 			}
 
@@ -1355,14 +1352,7 @@ func (m Model) renderPriorityEditor() string {
 	sb.WriteString("\n\n")
 
 	// Buttons
-	cancelBtn := "[ Cancel ]"
-	if m.priorityFocus == 3 {
-		cancelBtn = focusedItemStyle.Render(cancelBtn)
-	}
-	sb.WriteString(" ")
-	sb.WriteString(cancelBtn)
-	sb.WriteString("\n\n")
-	sb.WriteString("h/l/enter on Importance/Urgency to select & save • enter on Due Date to save • esc to cancel")
+	sb.WriteString("press enter to save • esc to cancel")
 
 	return editorBoxStyle.Render(sb.String())
 }
