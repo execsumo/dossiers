@@ -198,7 +198,22 @@ func (c *ClaudeCodeHarness) Install(opts core.InstallOpts) error {
 
 	mcpOk := isClaudeCodeMCPConfigured(mcpConfigMap, stablePath)
 
-	if hooksOk && mcpOk && !staleMCPInHooks {
+	// Check for Dossier skill custom instruction
+	hasSkill := false
+	if ci, ok := hooksConfigMap["customInstructions"]; ok {
+		if arr, ok := ci.([]any); ok {
+			for _, v := range arr {
+				if s, ok := v.(string); ok && strings.Contains(s, "Dossier Resumption Protocol") {
+					hasSkill = true
+					break
+				}
+			}
+		} else if s, ok := ci.(string); ok && strings.Contains(s, "Dossier Resumption Protocol") {
+			hasSkill = true
+		}
+	}
+
+	if hooksOk && mcpOk && !staleMCPInHooks && hasSkill {
 		return nil
 	}
 
@@ -246,6 +261,25 @@ func (c *ClaudeCodeHarness) Install(opts core.InstallOpts) error {
 			hooksMap["SessionEnd"] = updateHookArray(hooksMap["SessionEnd"], endCmd, "hook session-end")
 			hooksMap["PreCompact"] = updateHookArray(hooksMap["PreCompact"], preCompactCmd, "hook pre-compaction")
 			hooksConfigMap["hooks"] = hooksMap
+		}
+
+		// Inject custom instruction for Dossier skill
+		if !hasSkill {
+			skillInstruction := "You must strictly follow the Dossier Resumption Protocol defined in ~/.dossier/context/skill.md"
+			var customInst []string
+			if ci, ok := hooksConfigMap["customInstructions"]; ok {
+				if arr, ok := ci.([]any); ok {
+					for _, v := range arr {
+						if s, ok := v.(string); ok {
+							customInst = append(customInst, s)
+						}
+					}
+				} else if s, ok := ci.(string); ok {
+					customInst = append(customInst, s)
+				}
+			}
+			customInst = append(customInst, skillInstruction)
+			hooksConfigMap["customInstructions"] = customInst
 		}
 
 		// If hooksPath == claudeJSONPath, we merge MCP updates into the same map before writing

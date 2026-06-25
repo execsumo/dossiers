@@ -5,6 +5,8 @@ import (
 	"context"
 	"dossier/internal/core"
 	"dossier/internal/store"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -626,5 +628,52 @@ func TestVersionCommand(t *testing.T) {
 		if got := strings.TrimSpace(out.String()); got != "dossier v9.9.9-test" {
 			t.Errorf("%v: expected %q, got %q", args, "dossier v9.9.9-test", got)
 		}
+	}
+}
+
+func TestCLIUpdate(t *testing.T) {
+	// Create a mock server
+	expectedContent := "mock-binary-content-12345"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/dossier-test" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(expectedContent))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	tempDir := t.TempDir()
+	targetPath := filepath.Join(tempDir, "dossier-binary")
+
+	// Set env overrides
+	t.Setenv("DOSSIER_UPDATE_URL", srv.URL+"/dossier-test")
+	t.Setenv("DOSSIER_UPDATE_TARGET", targetPath)
+
+	cmd := NewRootCmd()
+	cmd.SetArgs([]string{"update"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("update execution failed: %v", err)
+	}
+
+	// Verify the target path has the expected content and is executable
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatalf("failed to read updated file: %v", err)
+	}
+
+	if string(data) != expectedContent {
+		t.Errorf("expected %q, got %q", expectedContent, string(data))
+	}
+
+	info, err := os.Stat(targetPath)
+	if err != nil {
+		t.Fatalf("failed to stat: %v", err)
+	}
+	// Check permissions on Unix (should be executable)
+	mode := info.Mode()
+	if mode&0111 == 0 {
+		t.Errorf("expected file to be executable, got mode: %v", mode)
 	}
 }

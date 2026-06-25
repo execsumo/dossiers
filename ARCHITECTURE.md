@@ -252,7 +252,7 @@ All three construct the Service identically via a small `wire()` that picks adap
 
 ## 8. Harness adapters (the fragile edge)
 
-The harness implements `Detect()` and `Install()`. `Install` is **idempotent, non-clobbering, and backs up** every file it touches (B7), and is **gated by confirmation** in `init` (B8). It registers both the lifecycle hooks and the MCP server (under name `"dossier"`) using the stable binary path passed via `InstallOpts.StableBinaryPath`. Claude Code keeps these in **distinct files**: hooks go to `~/.claude/settings.json` while the MCP server must go to `~/.claude.json` (the only location Claude Code reads user-scope MCP servers from). `Install` also migrates stale entries an older build wrote to the wrong file (e.g. a `dossier` MCP entry left in `settings.json`). Capability detection produces the booleans in SPEC §5.1.
+The harness implements `Detect()` and `Install()`. `Install` is **idempotent, non-clobbering, and backs up** every file it touches (B7), and is **gated by confirmation** in `init` (B8). It registers both the lifecycle hooks and the MCP server (under name `"dossier"`) using the stable binary path passed via `InstallOpts.StableBinaryPath`. Claude Code keeps these in **distinct files**: hooks go to `~/.claude/settings.json` while the MCP server must go to `~/.claude.json` (the only location Claude Code reads user-scope MCP servers from). `Install` also injects the Dossier Resumption Protocol into Claude Code's `customInstructions` array in `settings.json`. `Install` also migrates stale entries an older build wrote to the wrong file (e.g. a `dossier` MCP entry left in `settings.json`). Capability detection produces the booleans in SPEC §5.1.
 
 v1 supports **Claude Code only** (B2) — the one harness that provides the full capability set; what was learned validating it lives in `docs/harness-capabilities.md`. The `Harness` interface and `Registry` remain so additional harnesses could be added later, but other harnesses (Codex, Antigravity) only reach degraded capability levels insufficient for Dossier's guarantees and are out of scope for v1. The product must still **degrade visibly** — a capability missing in a given Claude Code session is a warning surfaced through `Result`, never a silent no-op.
 
@@ -260,7 +260,7 @@ v1 supports **Claude Code only** (B2) — the one harness that provides the full
 
 ## 9. Assets & generated context
 
-The Distillation Guide and the `library.md` template are **embedded** via `go:embed` (`assets/`). `init` writes the guide to `~/.dossier/context/guide.md`; `context refresh` regenerates `~/.dossier/context/library.md` from the template + a live frontmatter scan. This keeps the single-binary promise — no external asset files to ship.
+The Distillation Guide, the Dossier Protocol skill, and the `library.md` template are **embedded** via `go:embed` (`assets/`). `init` writes both the guide and the `skill.md` file to `~/.dossier/context/`; `context refresh` regenerates `~/.dossier/context/library.md` from the template + a live frontmatter scan. This keeps the single-binary promise — no external asset files to ship.
 
 ---
 

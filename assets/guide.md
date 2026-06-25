@@ -19,6 +19,7 @@ A world-class dossier ruthlessly prunes linguistic fat while preserving all mate
 - **Durable State Only:** The Distilled State must represent the current, clean, consolidated truth of the topic.
 - **Strict Provenance:** Every material claim, metric, and decision MUST trace back to its origin. Append source references to claims. Example: `[src:art_01jz8salesfeedback#L42-L68]` or `[src:art_01jz8launchthread]`.
 - **Archive First, Distill Second:** Save raw transcripts, code snapshots, and full threads as source artifacts in the Archive *before* referencing them in the Distilled State.
+- **Archival Sources vs Active Monitors:** Distinguish between *static* historical context (inline links like `[src:art_id]`) and *live* context streams that must be polled (like ongoing Slack threads). Live context belongs in `## Active Monitors`.
 - **Keep Context Current:** Maintain the session's active Dossier using a best-effort approach each turn. Save state on lifecycle events (session end, `/clear`, `/exit`, pre-compaction).
 - **Never Silently Truncate:** Never truncate the Distilled State to meet arbitrary token limits. If approaching limits, warn the user.
 - **Optimistic Concurrency & Disambiguation:** Concurrent edits produce conflict files. Prompt the user for ambiguous link targets and manual merge conflict resolution. Never rely on last-write-wins.
@@ -43,6 +44,10 @@ Validated insights, metrics, constraints, or test results. Include abandoned pat
 - <Finding> [src:art_<id>#L<a>-L<b>]
 - [Rejected] <Alternative considered>; <Constraint or reason for rejection>. [src:art_<id>]
 
+## Active Monitors
+Live external context streams that must be polled for updates upon resuming this Dossier.
+- [<NAMESPACE>: <ID>](<URL>): <Reason to poll>. (Last polled: <YYYY-MM-DD>)
+
 ## Current State
 Immediate execution context. Active files, blockers, or configurations.
 
@@ -62,5 +67,7 @@ Immediate required actions. Must align with `next_action` and `open_questions` m
 > - **Findings:**
 >   - [Rejected] Redis distributed lock; introduced unacceptable network latency (>100ms overhead). [src:art_01jz8redis_eval]
 >   - Concurrency tests fail at lock timeouts < 200ms. [src:art_01jz8test_results#L102]
+> - **Active Monitors:**
+>   - [SLACK: #pricing-bug](https://slack.com/...): Ongoing discussion regarding usage-tier lock timeouts. (Last polled: 2026-06-14)
 > - **Current State:** Lock timeout increased to 500ms; local test suite passing.
 > - **Next Steps:** Merge pricing patch; monitor production telemetry.

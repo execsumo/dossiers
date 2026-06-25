@@ -50,6 +50,15 @@ func (s *FSStore) Init() error {
 		return fmt.Errorf("failed to write guide.md: %w", err)
 	}
 
+	skillContent, err := assets.FS.ReadFile("skill.md")
+	if err != nil {
+		return fmt.Errorf("failed to read embedded skill: %w", err)
+	}
+	skillPath := filepath.Join(s.dossierHome, "context", "skill.md")
+	if err := os.WriteFile(skillPath, skillContent, 0644); err != nil {
+		return fmt.Errorf("failed to write skill.md: %w", err)
+	}
+
 	data := core.LibraryData{
 		Harness: "CLI",
 		Capabilities: map[string]bool{

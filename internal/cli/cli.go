@@ -14,8 +14,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -902,6 +904,113 @@ func NewRootCmd() *cobra.Command {
 	priorityCmd.Flags().StringVar(&urgencyFlag, "urgency", "", "Urgency: h|m|l")
 	priorityCmd.Flags().StringVar(&dueFlag, "due", "", "Due date (YYYY-MM-DD or relative)")
 
+	updateCmd := &cobra.Command{
+		Use:   "update",
+		Short: "Update the Dossier binary to the latest release",
+		Args:  cobra.NoArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			targetPath := os.Getenv("DOSSIER_UPDATE_TARGET")
+			if targetPath == "" {
+				var err error
+				targetPath, err = os.Executable()
+				if err != nil {
+					fmt.Printf("Failed to get current executable path: %v\n", err)
+					os.Exit(1)
+				}
+
+				if isVolatilePath(targetPath) {
+					targetPath = getStableBinaryPath()
+					if isVolatilePath(targetPath) {
+						home, err := os.UserHomeDir()
+						if err == nil {
+							targetPath = filepath.Join(home, ".local", "bin", "dossier")
+						} else {
+							fmt.Println("Error: could not determine stable installation path. Run 'dossier install' first.")
+							os.Exit(1)
+						}
+					}
+				}
+			}
+
+			updateURL := os.Getenv("DOSSIER_UPDATE_URL")
+			if updateURL == "" {
+				updateURL = fmt.Sprintf("https://github.com/execsumo/dossiers/releases/latest/download/dossier-%s-%s", runtime.GOOS, runtime.GOARCH)
+			}
+
+			fmt.Printf("Downloading latest release from %s...\n", updateURL)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+
+			req, err := http.NewRequestWithContext(ctx, "GET", updateURL, nil)
+			if err != nil {
+				fmt.Printf("Failed to create request: %v\n", err)
+				os.Exit(1)
+			}
+
+			req.Header.Set("User-Agent", "dossier-updater")
+
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				fmt.Printf("Failed to download release: %v\n", err)
+				os.Exit(1)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				fmt.Printf("Failed to download release: HTTP %s\n", resp.Status)
+				os.Exit(1)
+			}
+
+			destDir := filepath.Dir(targetPath)
+			if err := os.MkdirAll(destDir, 0755); err != nil {
+				fmt.Printf("Failed to create directory %s: %v\n", destDir, err)
+				os.Exit(1)
+			}
+
+			tmpFile, err := os.CreateTemp(destDir, "dossier-update-*")
+			if err != nil {
+				fmt.Printf("Failed to create temporary file: %v\n", err)
+				os.Exit(1)
+			}
+			tmpName := tmpFile.Name()
+			defer func() {
+				if tmpFile != nil {
+					tmpFile.Close()
+					os.Remove(tmpName)
+				}
+			}()
+
+			if _, err := io.Copy(tmpFile, resp.Body); err != nil {
+				fmt.Printf("Failed to write download content: %v\n", err)
+				os.Exit(1)
+			}
+
+			if err := tmpFile.Sync(); err != nil {
+				fmt.Printf("Failed to sync file: %v\n", err)
+				os.Exit(1)
+			}
+
+			if err := tmpFile.Close(); err != nil {
+				fmt.Printf("Failed to close temporary file: %v\n", err)
+				os.Exit(1)
+			}
+			tmpFile = nil
+
+			if err := os.Chmod(tmpName, 0755); err != nil {
+				fmt.Printf("Failed to make updated binary executable: %v\n", err)
+				os.Exit(1)
+			}
+
+			if err := os.Rename(tmpName, targetPath); err != nil {
+				fmt.Printf("Failed to install updated binary over %s: %v\n", targetPath, err)
+				os.Exit(1)
+			}
+
+			fmt.Printf("Dossier successfully updated to the latest release at %s\n", targetPath)
+		},
+	}
+
 	hookCmd := &cobra.Command{
 		Use:   "hook <session-start|session-end|pre-compaction>",
 		Short: "Run lifecycle integration hooks",
@@ -999,7 +1108,9 @@ func NewRootCmd() *cobra.Command {
 	rootCmd.AddCommand(nextCmd)
 	rootCmd.AddCommand(questionsCmd)
 	rootCmd.AddCommand(priorityCmd)
+	rootCmd.AddCommand(updateCmd)
 	rootCmd.AddCommand(hookCmd)
+
 	rootCmd.AddCommand(tuiCmd)
 
 	// Match `dossier version` output for the built-in `--version` flag.
