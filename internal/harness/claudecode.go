@@ -203,12 +203,12 @@ func (c *ClaudeCodeHarness) Install(opts core.InstallOpts) error {
 	if ci, ok := hooksConfigMap["customInstructions"]; ok {
 		if arr, ok := ci.([]any); ok {
 			for _, v := range arr {
-				if s, ok := v.(string); ok && strings.Contains(s, "Dossier Operations") {
+				if s, ok := v.(string); ok && strings.Contains(s, "Dossier") {
 					hasSkill = true
 					break
 				}
 			}
-		} else if s, ok := ci.(string); ok && strings.Contains(s, "Dossier Operations") {
+		} else if s, ok := ci.(string); ok && strings.Contains(s, "Dossier") {
 			hasSkill = true
 		}
 	}
@@ -263,9 +263,9 @@ func (c *ClaudeCodeHarness) Install(opts core.InstallOpts) error {
 			hooksConfigMap["hooks"] = hooksMap
 		}
 
-		// Inject custom instruction for Dossier skill
+		// Inject custom instruction for Dossier usage
 		if !hasSkill {
-			skillInstruction := "You must strictly follow the Dossier Operations skill defined in ~/.dossier/context/skill.md"
+			skillInstruction := "Dossier: ALWAYS use the dossier_session tool to identify or switch to your active dossier when starting work. Do NOT attempt to bypass MCP."
 			var customInst []string
 			if ci, ok := hooksConfigMap["customInstructions"]; ok {
 				if arr, ok := ci.([]any); ok {

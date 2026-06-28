@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -372,15 +374,43 @@ func (s *Service) Promote(ctx context.Context, req PromoteReq) (Result, error) {
 				if len(candidates) > 3 {
 					candidates = candidates[:3]
 				}
-				return Result{
-					OK:   false,
-					Data: candidates,
-					NextActions: []NextAction{
-						`Present the candidates to the user: "I found Dossiers that look related — [for each: Name (status, N days since last update)]. Is one of these the right one to continue, or is this a separate thread?"`,
-						`If the user picks one: call dossier_session with its slug to bind it, then dossier_recall to load its state.`,
-						`If the user confirms this is a new topic: call dossier_promote again with force=true.`,
-					},
-				}, NewError(ErrAmbiguousTarget, "Multiple likely Dossiers match this promote request.")
+
+				// Attempt OS dialog prompt
+				var dialogOverrodeForce bool
+				if runtime.GOOS == "darwin" && !strings.HasSuffix(os.Args[0], ".test") {
+					var names []string
+					for _, c := range candidates {
+						names = append(names, fmt.Sprintf("%q", c.Name))
+					}
+					promptMsg := fmt.Sprintf("Found related topics: %s. Create a new thread anyway?", strings.Join(names, ", "))
+					cmd := exec.Command("osascript", "-e", fmt.Sprintf(`button returned of (display dialog %q buttons {"Yes", "No"} default button "No" with title "Dossier Verification")`, promptMsg))
+					if out, err := cmd.Output(); err == nil {
+						if strings.TrimSpace(string(out)) == "Yes" {
+							req.Force = true
+							dialogOverrodeForce = true
+						} else {
+							return Result{
+								OK:   false,
+								Data: candidates,
+								NextActions: []NextAction{
+									`The user REJECTED the creation of a new thread via system dialog. You MUST link your work to one of the candidates provided.`,
+								},
+							}, NewError(ErrAmbiguousTarget, "User explicitly rejected creation. MUST link to existing dossier.")
+						}
+					}
+				}
+
+				if !dialogOverrodeForce {
+					return Result{
+						OK:   false,
+						Data: candidates,
+						NextActions: []NextAction{
+							`Present the candidates to the user: "I found Dossiers that look related — [for each: Name (status, N days since last update)]. Is one of these the right one to continue, or is this a separate thread?"`,
+							`If the user picks one: call dossier_session with its slug to bind it, then dossier_recall to load its state.`,
+							`If the user confirms this is a new topic: call dossier_promote again with force=true.`,
+						},
+					}, NewError(ErrAmbiguousTarget, "Multiple likely Dossiers match this promote request.")
+				}
 			}
 		}
 	}
@@ -1546,6 +1576,14 @@ func (s *Service) GetGuide() string {
 	guidePath := filepath.Join(s.cfg.DossierHome, "context", "guide.md")
 	if guideBytes, err := os.ReadFile(guidePath); err == nil {
 		return string(guideBytes)
+	}
+	return ""
+}
+
+func (s *Service) GetInstructions() string {
+	instructionsPath := filepath.Join(s.cfg.DossierHome, "context", "instructions.md")
+	if instructionsBytes, err := os.ReadFile(instructionsPath); err == nil {
+		return string(instructionsBytes)
 	}
 	return ""
 }

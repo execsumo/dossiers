@@ -50,13 +50,15 @@ func (s *FSStore) Init() error {
 		return fmt.Errorf("failed to write guide.md: %w", err)
 	}
 
-	skillContent, err := assets.FS.ReadFile("skill.md")
+
+
+	instructionsContent, err := assets.FS.ReadFile("instructions.md")
 	if err != nil {
-		return fmt.Errorf("failed to read embedded skill: %w", err)
+		return fmt.Errorf("failed to read embedded instructions: %w", err)
 	}
-	skillPath := filepath.Join(s.dossierHome, "context", "skill.md")
-	if err := os.WriteFile(skillPath, skillContent, 0644); err != nil {
-		return fmt.Errorf("failed to write skill.md: %w", err)
+	instructionsPath := filepath.Join(s.dossierHome, "context", "instructions.md")
+	if err := os.WriteFile(instructionsPath, instructionsContent, 0644); err != nil {
+		return fmt.Errorf("failed to write instructions.md: %w", err)
 	}
 
 	data := core.LibraryData{
@@ -316,6 +318,10 @@ func (s *FSStore) Write(d *core.Dossier, base core.Revision) (core.Revision, err
 	}
 	tempFile.Close()
 
+	if err := os.Chmod(tempName, 0444); err != nil {
+		return "", fmt.Errorf("failed to set read-only permissions: %w", err)
+	}
+
 	if err := os.Rename(tempName, dossierPath); err != nil {
 		return "", fmt.Errorf("failed to atomically rename temp file: %w", err)
 	}
@@ -410,6 +416,10 @@ func (s *FSStore) WriteArtifact(dossierID string, a *core.Artifact) error {
 		return err
 	}
 	tempFile.Close()
+
+	if err := os.Chmod(tempName, 0444); err != nil {
+		return fmt.Errorf("failed to set read-only permissions: %w", err)
+	}
 
 	if err := os.Rename(tempName, filePath); err != nil {
 		return fmt.Errorf("failed to rename temp artifact file: %w", err)

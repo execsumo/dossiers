@@ -343,12 +343,14 @@ func (s *Server) handleToolCall(ctx context.Context, id any, name string, args j
 			}
 			if err == nil && res.OK {
 				type SessionResponse struct {
-					State interface{} `json:"state"`
-					Guide string      `json:"distillation_guide,omitempty"`
+					State                 interface{} `json:"state"`
+					Guide                 string      `json:"distillation_guide,omitempty"`
+					OperatingInstructions string      `json:"operating_instructions,omitempty"`
 				}
 				res.Data = SessionResponse{
-					State: res.Data,
-					Guide: s.svc.GetGuide(),
+					State:                 res.Data,
+					Guide:                 s.svc.GetGuide(),
+					OperatingInstructions: s.svc.GetInstructions(),
 				}
 			}
 		}
