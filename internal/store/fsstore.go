@@ -50,8 +50,6 @@ func (s *FSStore) Init() error {
 		return fmt.Errorf("failed to write guide.md: %w", err)
 	}
 
-
-
 	instructionsContent, err := assets.FS.ReadFile("instructions.md")
 	if err != nil {
 		return fmt.Errorf("failed to read embedded instructions: %w", err)
