@@ -42,20 +42,20 @@ const (
 // Styling tokens
 var (
 	purple       = lipgloss.Color("99")
-	lightGray    = lipgloss.Color("250")
-	darkGray     = lipgloss.Color("237")
-	vibrantGreen = lipgloss.Color("42")
-	vibrantRed   = lipgloss.Color("196")
-	warningGold  = lipgloss.Color("208")
+	lightGray    = lipgloss.Color("7") // Use terminal's standard light gray (ANSI 7)
+	darkGray     = lipgloss.Color("8") // Use terminal's standard dark gray/bright black (ANSI 8)
+	vibrantGreen = lipgloss.Color("2") // Use terminal's standard green (ANSI 2)
+	vibrantRed   = lipgloss.Color("1") // Use terminal's standard red (ANSI 1)
+	warningGold  = lipgloss.Color("3") // Use terminal's standard yellow/gold (ANSI 3)
 
 	titleStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("229")).
+			Foreground(lipgloss.Color("15")). // Use terminal's standard bright white (ANSI 15) for title text on purple bg
 			Background(purple).
 			Padding(0, 2).
 			Bold(true)
 
 	subtitleStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("244")).
+			Foreground(darkGray). // Inherit terminal theme's gray (ANSI 8)
 			Italic(true)
 
 	headerStyle = lipgloss.NewStyle().
@@ -63,8 +63,7 @@ var (
 			Bold(true)
 
 	footerStyle = lipgloss.NewStyle().
-			Background(darkGray).
-			Foreground(lightGray).
+			Reverse(true). // Inverted foreground and background dynamically to match terminal theme status bar
 			Padding(0, 1)
 
 	warningStyle = lipgloss.NewStyle().
@@ -79,14 +78,13 @@ var (
 			Foreground(purple).
 			Bold(true)
 
-	metaValueStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("252"))
+	metaValueStyle = lipgloss.NewStyle() // Inherit terminal's default text foreground color
 
 	statusActiveStyle   = lipgloss.NewStyle().Foreground(vibrantGreen).Bold(true)
 	statusWaitingStyle  = lipgloss.NewStyle().Foreground(warningGold)
 	statusBlockedStyle  = lipgloss.NewStyle().Foreground(vibrantRed).Bold(true)
-	statusResolvedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
-	statusArchivedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	statusResolvedStyle = lipgloss.NewStyle().Foreground(darkGray)
+	statusArchivedStyle = lipgloss.NewStyle().Foreground(darkGray).Faint(true)
 
 	editorBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -95,7 +93,7 @@ var (
 			Margin(1, 0)
 
 	focusedItemStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("229")).
+				Foreground(lipgloss.Color("15")). // Use terminal's standard bright white (ANSI 15)
 				Background(purple).
 				Bold(true).
 				Padding(0, 1)
@@ -244,11 +242,11 @@ func NewModel(svc *core.Service) Model {
 	s := table.DefaultStyles()
 	s.Header = s.Header.
 		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("240")).
+		BorderForeground(darkGray).
 		BorderBottom(true).
 		Bold(true)
 	s.Selected = s.Selected.
-		Foreground(lipgloss.Color("229")).
+		Foreground(lipgloss.Color("15")).
 		Background(purple).
 		Bold(true)
 	t.SetStyles(s)
@@ -628,6 +626,47 @@ func (m *Model) renderMarkdown(content string) string {
 		cfg.H4.Prefix = ""
 		cfg.H5.Prefix = ""
 		cfg.H6.Prefix = ""
+
+		// Reset document colors to inherit terminal defaults (supporting light/dark themes)
+		cfg.Document.Color = nil
+		cfg.Document.BackgroundColor = nil
+
+		// Signature purple accent for headings
+		purpleStr := "99"
+		cfg.Heading.Color = &purpleStr
+		cfg.Heading.BackgroundColor = nil
+		cfg.H1.Color = &purpleStr
+		cfg.H1.BackgroundColor = nil
+		cfg.H2.Color = &purpleStr
+		cfg.H2.BackgroundColor = nil
+		cfg.H3.Color = &purpleStr
+		cfg.H3.BackgroundColor = nil
+		cfg.H4.Color = &purpleStr
+		cfg.H4.BackgroundColor = nil
+		cfg.H5.Color = &purpleStr
+		cfg.H5.BackgroundColor = nil
+		cfg.H6.Color = &purpleStr
+		cfg.H6.BackgroundColor = nil
+
+		// Make blockquote left border signature purple as well
+		cfg.BlockQuote.Color = &purpleStr
+
+		// Cyan for links (standard ANSI 6, theme adaptive)
+		cyanStr := "6"
+		cfg.Link.Color = &cyanStr
+		cfg.LinkText.Color = &cyanStr
+
+		// Inline code: cyan color and no background color to avoid contrast issues on light/dark backgrounds
+		cfg.Code.Color = &cyanStr
+		cfg.Code.BackgroundColor = nil
+
+		// Gray for horizontal rules (standard ANSI 8)
+		grayStr := "8"
+		cfg.HorizontalRule.Color = &grayStr
+
+		// Use bw theme for syntax highlighting to avoid hardcoded dark/light colors
+		cfg.CodeBlock.Chroma = nil
+		cfg.CodeBlock.Theme = "bw"
 
 		r, err := glamour.NewTermRenderer(
 			glamour.WithStyles(cfg),
@@ -1547,7 +1586,7 @@ func (m Model) View() string {
 		sb.WriteString(renderRow("Tokens:", fmt.Sprintf("%d / %d", m.recallResult.TokenEstimate, targetTokens)))
 		sb.WriteString(renderRow("Next:", fm.NextAction))
 
-		sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(strings.Repeat("─", m.width)))
+		sb.WriteString(lipgloss.NewStyle().Foreground(darkGray).Render(strings.Repeat("─", m.width)))
 		sb.WriteString("\n")
 
 		// Scrollable viewport
