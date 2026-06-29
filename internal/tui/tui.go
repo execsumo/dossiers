@@ -49,7 +49,7 @@ var (
 	warningGold  = lipgloss.Color("3") // Use terminal's standard yellow/gold (ANSI 3)
 
 	titleStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("15")). // Use terminal's standard bright white (ANSI 15) for title text on purple bg
+			Foreground(lipgloss.Color("#FFFFFF")). // Force crisp white text on purple bg
 			Background(purple).
 			Padding(0, 2).
 			Bold(true)
@@ -93,7 +93,7 @@ var (
 			Margin(1, 0)
 
 	focusedItemStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("15")). // Use terminal's standard bright white (ANSI 15)
+				Foreground(lipgloss.Color("#FFFFFF")). // Force crisp white text on purple bg
 				Background(purple).
 				Bold(true).
 				Padding(0, 1)
@@ -246,7 +246,7 @@ func NewModel(svc *core.Service) Model {
 		BorderBottom(true).
 		Bold(true)
 	s.Selected = s.Selected.
-		Foreground(lipgloss.Color("15")).
+		Foreground(lipgloss.Color("#FFFFFF")). // Force crisp white text on purple bg
 		Background(purple).
 		Bold(true)
 	t.SetStyles(s)
@@ -633,10 +633,14 @@ func (m *Model) renderMarkdown(content string) string {
 
 		// Signature purple accent for headings
 		purpleStr := "99"
+		whiteStr := "#FFFFFF"
 		cfg.Heading.Color = &purpleStr
 		cfg.Heading.BackgroundColor = nil
-		cfg.H1.Color = &purpleStr
-		cfg.H1.BackgroundColor = nil
+
+		// Highlight H1 with signature purple background and crisp white text
+		cfg.H1.Color = &whiteStr
+		cfg.H1.BackgroundColor = &purpleStr
+
 		cfg.H2.Color = &purpleStr
 		cfg.H2.BackgroundColor = nil
 		cfg.H3.Color = &purpleStr
