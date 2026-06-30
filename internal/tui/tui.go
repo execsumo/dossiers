@@ -37,7 +37,58 @@ const (
 	ViewLinkSelector
 	ViewMergeSelector
 	ViewMergeConflictResolver
+	// ViewLeadSelector is the startup landing screen: pick a lead to scope the
+	// dashboard to before a meeting, with search-as-you-type.
+	ViewLeadSelector
 )
+
+// leadFilterKind enumerates the three ways the dashboard can be scoped by lead.
+type leadFilterKind int
+
+const (
+	filterAll        leadFilterKind = iota // every dossier, regardless of lead
+	filterUnassigned                       // dossiers with no lead set
+	filterByName                           // dossiers owned by a specific lead
+)
+
+// leadFilter scopes the dashboard to a subset of dossiers by lead. It is a typed
+// value rather than a sentinel string so a lead literally named "All" or
+// "Unassigned" can never be confused with the pinned filter modes.
+type leadFilter struct {
+	kind leadFilterKind
+	name string // meaningful only when kind == filterByName
+}
+
+// matches reports whether item belongs in this filter's view.
+func (f leadFilter) matches(item core.ListItem) bool {
+	switch f.kind {
+	case filterUnassigned:
+		return item.Lead == ""
+	case filterByName:
+		return item.Lead == f.name
+	default: // filterAll
+		return true
+	}
+}
+
+// label is the human-facing name shown in the selector and dashboard.
+func (f leadFilter) label() string {
+	switch f.kind {
+	case filterUnassigned:
+		return "Unassigned"
+	case filterByName:
+		return f.name
+	default:
+		return "All"
+	}
+}
+
+// leadOption is one selectable row in the lead landing screen: a filter plus the
+// number of dossiers it would show, computed once when the option list is built.
+type leadOption struct {
+	filter leadFilter
+	count  int
+}
 
 // Styling tokens
 var (
@@ -159,8 +210,16 @@ type Model struct {
 	currentView View
 
 	// Data
-	items        []core.ListItem
+	items        []core.ListItem // full dossier list, source of truth
+	visibleItems []core.ListItem // items[] narrowed by leadFilter; what the table shows
 	recallResult core.RecallResult
+
+	// Lead landing screen state
+	leadFilter  leadFilter      // active dashboard scope (defaults to All)
+	leadSearch  textinput.Model // search-as-you-type box
+	leadOptions []leadOption    // every selectable lead, counts included
+	leadResults []leadOption    // leadOptions narrowed by the search box
+	leadCursor  int
 
 	// Viewport & Table
 	table            table.Model
@@ -262,6 +321,11 @@ func NewModel(svc *core.Service) Model {
 		core.StatusArchived,
 	}
 
+	leadSearch := textinput.New()
+	leadSearch.Placeholder = "Type a lead's name to search…"
+	leadSearch.Focus()
+	leadSearch.Width = 40
+
 	watcher, err := fsnotify.NewWatcher()
 	updateChan := make(chan string, 100)
 	if err == nil {
@@ -283,12 +347,13 @@ func NewModel(svc *core.Service) Model {
 
 	return Model{
 		svc:              svc,
-		currentView:      ViewDashboard,
+		currentView:      ViewLeadSelector,
 		table:            t,
 		viewport:         vp,
 		conflictViewport: cvp,
 		loading:          true,
 		statusOptions:    statusOptions,
+		leadSearch:       leadSearch,
 		watcher:          watcher,
 		updateChan:       updateChan,
 		watchedPaths:     map[string]bool{},
@@ -339,8 +404,9 @@ func (m Model) Init() tea.Cmd {
 // listDossiersCmd fetches the dossier list asynchronously.
 func (m Model) listDossiersCmd() tea.Cmd {
 	return func() tea.Msg {
-		// Use empty status to query active work (active/waiting/blocked) by default as planned
-		res, err := m.svc.List(context.Background(), core.ListReq{Status: ""})
+		// Fetch every status: the lead landing screen is for meeting prep, so a
+		// lead's resolved/archived dossiers must be on hand, not just active work.
+		res, err := m.svc.List(context.Background(), core.ListReq{Status: "all"})
 		if err != nil {
 			return errMsg(err)
 		}
@@ -475,8 +541,8 @@ func (m Model) getTargetDossier() (targetDossier, bool) {
 
 	// Dashboard view
 	idx := m.table.Cursor()
-	if idx >= 0 && idx < len(m.items) {
-		item := m.items[idx]
+	if idx >= 0 && idx < len(m.visibleItems) {
+		item := m.visibleItems[idx]
 		return targetDossier{
 			id:           item.ID,
 			name:         item.Name,
@@ -490,6 +556,122 @@ func (m Model) getTargetDossier() (targetDossier, bool) {
 		}, true
 	}
 	return targetDossier{}, false
+}
+
+// deriveLeadOptions builds the lead landing screen's rows from the full dossier
+// list: "All" and "Unassigned" pinned first, then each distinct lead in
+// case-insensitive alphabetical order, every row annotated with its dossier
+// count. Pure: depends only on items.
+func deriveLeadOptions(items []core.ListItem) []leadOption {
+	var all, unassigned int
+	counts := make(map[string]int)
+	for _, item := range items {
+		if item.ID == "" {
+			continue // skip placeholder/header rows
+		}
+		all++
+		if item.Lead == "" {
+			unassigned++
+			continue
+		}
+		counts[item.Lead]++
+	}
+
+	names := make([]string, 0, len(counts))
+	for name := range counts {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		return strings.ToLower(names[i]) < strings.ToLower(names[j])
+	})
+
+	opts := make([]leadOption, 0, len(names)+2)
+	opts = append(opts,
+		leadOption{filter: leadFilter{kind: filterAll}, count: all},
+		leadOption{filter: leadFilter{kind: filterUnassigned}, count: unassigned},
+	)
+	for _, name := range names {
+		opts = append(opts, leadOption{
+			filter: leadFilter{kind: filterByName, name: name},
+			count:  counts[name],
+		})
+	}
+	return opts
+}
+
+// statusTier ranks a dossier's lifecycle status for dashboard ordering: live
+// work (active/waiting/blocked) is tier 0, terminal work (resolved/archived) is
+// tier 1, so terminal dossiers always sort below open ones at any priority.
+func statusTier(status string) int {
+	switch core.Status(status) {
+	case core.StatusResolved, core.StatusArchived:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// filterLeadOptions narrows opts to those whose label contains query
+// (case-insensitive). An empty query returns opts unchanged. Pure.
+func filterLeadOptions(opts []leadOption, query string) []leadOption {
+	query = strings.TrimSpace(strings.ToLower(query))
+	if query == "" {
+		return opts
+	}
+	out := make([]leadOption, 0, len(opts))
+	for _, o := range opts {
+		if strings.Contains(strings.ToLower(o.filter.label()), query) {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// applyLeadFilter recomputes the dashboard's visible items from the full set and
+// the active lead filter. It is the single choke point that keeps the table rows
+// in sync with the filter, so cursor lookups can index visibleItems directly.
+func (m *Model) applyLeadFilter() {
+	visible := make([]core.ListItem, 0, len(m.items))
+	for _, item := range m.items {
+		if m.leadFilter.matches(item) {
+			visible = append(visible, item)
+		}
+	}
+	m.visibleItems = visible
+}
+
+// openLeadSelector enters the landing screen with a fresh search, the option list
+// rebuilt from current data, and the cursor parked on the active filter.
+func (m *Model) openLeadSelector() {
+	m.previousView = m.currentView
+	m.currentView = ViewLeadSelector
+
+	m.leadSearch = textinput.New()
+	m.leadSearch.Placeholder = "Type a lead's name to search…"
+	m.leadSearch.Focus()
+	m.leadSearch.Width = 40
+
+	m.leadOptions = deriveLeadOptions(m.items)
+	m.leadResults = m.leadOptions
+	m.leadCursor = 0
+	for i, o := range m.leadResults {
+		if o.filter == m.leadFilter {
+			m.leadCursor = i
+			break
+		}
+	}
+}
+
+// chooseLead applies the option under the cursor and drops into the dashboard.
+func (m *Model) chooseLead() {
+	if m.leadCursor >= 0 && m.leadCursor < len(m.leadResults) {
+		m.leadFilter = m.leadResults[m.leadCursor].filter
+	}
+	m.applyLeadFilter()
+	m.populateTableRows()
+	m.currentView = ViewDashboard
+	m.table.SetCursor(0)
+	m.table.Focus()
 }
 
 func (m *Model) startEditStatus(t targetDossier) {
@@ -697,6 +879,47 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		// View-specific key overrides
 		switch m.currentView {
+		case ViewLeadSelector:
+			switch msg.String() {
+			case "ctrl+c":
+				return m, tea.Quit
+			case "esc":
+				// Skip selection: fall through to the dashboard with the current
+				// filter (All by default). On the startup landing this means
+				// "show everything"; reopened via 'f' it cancels the change.
+				m.applyLeadFilter()
+				m.populateTableRows()
+				m.currentView = ViewDashboard
+				m.table.SetCursor(0)
+				m.table.Focus()
+				return m, nil
+			case "up", "ctrl+p":
+				if len(m.leadResults) > 0 {
+					m.leadCursor = (m.leadCursor - 1 + len(m.leadResults)) % len(m.leadResults)
+				}
+				return m, nil
+			case "down", "ctrl+n":
+				if len(m.leadResults) > 0 {
+					m.leadCursor = (m.leadCursor + 1) % len(m.leadResults)
+				}
+				return m, nil
+			case "enter":
+				if len(m.leadResults) > 0 {
+					m.chooseLead()
+				}
+				return m, nil
+			}
+			// Any other key edits the search box; re-filter and keep the cursor valid.
+			m.leadSearch, cmd = m.leadSearch.Update(msg)
+			m.leadResults = filterLeadOptions(m.leadOptions, m.leadSearch.Value())
+			if m.leadCursor >= len(m.leadResults) {
+				m.leadCursor = len(m.leadResults) - 1
+			}
+			if m.leadCursor < 0 {
+				m.leadCursor = 0
+			}
+			return m, cmd
+
 		case ViewLinkInput:
 			switch msg.String() {
 			case "esc":
@@ -880,8 +1103,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if m.currentView == ViewDashboard {
 				idx := m.table.Cursor()
-				if idx >= 0 && idx < len(m.items) {
-					dossierID := m.items[idx].ID
+				if idx >= 0 && idx < len(m.visibleItems) {
+					dossierID := m.visibleItems[idx].ID
 					if dossierID == "" {
 						return m, nil // prevent selection of header
 					}
@@ -927,6 +1150,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return editorFinishedMsg{err: err, id: m.recallResult.Frontmatter.ID}
 				})
 			}
+		case "f":
+			if m.currentView == ViewDashboard {
+				m.openLeadSelector()
+				return m, nil
+			}
 		case "k":
 			if m.currentView == ViewDashboard {
 				m.startLinkInput()
@@ -935,8 +1163,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "m":
 			if m.currentView == ViewDashboard {
 				idx := m.table.Cursor()
-				if idx >= 0 && idx < len(m.items) {
-					m.startMergeSelector(m.items[idx].ID, m.items[idx].Name)
+				if idx >= 0 && idx < len(m.visibleItems) {
+					m.startMergeSelector(m.visibleItems[idx].ID, m.visibleItems[idx].Name)
 					return m, nil
 				}
 			}
@@ -961,6 +1189,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 
 		sort.Slice(msg, func(i, j int) bool {
+			// Live work (active/waiting/blocked) always sorts above terminal work
+			// (resolved/archived). We fetch all statuses so a lead's finished
+			// dossiers are on hand for meeting prep, but that must never bury open
+			// work beneath a high-priority archived item.
+			if ti, tj := statusTier(msg[i].Status), statusTier(msg[j].Status); ti != tj {
+				return ti < tj
+			}
 			if msg[i].PriorityScore != msg[j].PriorityScore {
 				return msg[i].PriorityScore < msg[j].PriorityScore
 			}
@@ -979,8 +1214,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 
 		m.items = msg
+
+		// Re-derive lead options on every refresh so newly-assigned leads appear,
+		// while preserving the active filter (and the search box) across hot-reloads.
+		m.leadOptions = deriveLeadOptions(m.items)
+		m.leadResults = filterLeadOptions(m.leadOptions, m.leadSearch.Value())
+		if m.leadCursor >= len(m.leadResults) {
+			m.leadCursor = len(m.leadResults) - 1
+		}
+		if m.leadCursor < 0 {
+			m.leadCursor = 0
+		}
+
+		m.applyLeadFilter()
 		m.populateTableRows()
-		if len(msg) > 0 {
+		if len(m.visibleItems) > 0 {
 			m.table.SetCursor(0)
 		}
 
@@ -1108,7 +1356,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.currentView == ViewDetail && m.recallResult.Frontmatter.ID != "" {
 			m.loading = true
 			cmds = append(cmds, m.recallDossierCmd(m.recallResult.Frontmatter.ID))
-		} else if m.currentView == ViewDashboard {
+		} else if m.currentView == ViewDashboard || m.currentView == ViewLeadSelector {
 			cmds = append(cmds, m.listDossiersCmd())
 		}
 	}
@@ -1142,8 +1390,8 @@ func (m *Model) tableColumnsConfig() (showPriority, showNextAction, showDue bool
 func (m *Model) populateTableRows() {
 	showPriority, showNextAction, showDue := m.tableColumnsConfig()
 
-	rows := make([]table.Row, 0, len(m.items))
-	for _, item := range m.items {
+	rows := make([]table.Row, 0, len(m.visibleItems))
+	for _, item := range m.visibleItems {
 		if item.ID == "" {
 			row := table.Row{item.Name, "", ""}
 			if showPriority {
@@ -1402,6 +1650,48 @@ func (m Model) renderPriorityEditor() string {
 	return editorBoxStyle.Render(sb.String())
 }
 
+func (m Model) renderLeadSelector() string {
+	var sb strings.Builder
+	sb.WriteString("Filter dossiers by Lead — everything you need before a meeting.\n\n")
+	sb.WriteString(m.leadSearch.View())
+	sb.WriteString("\n\n")
+
+	if m.loading && len(m.items) == 0 {
+		sb.WriteString(" Loading leads…\n")
+		return editorBoxStyle.Render(sb.String())
+	}
+
+	if len(m.leadResults) == 0 {
+		sb.WriteString(subtitleStyle.Render(" No leads match your search.\n"))
+		sb.WriteString("\n")
+		sb.WriteString("type to refine • esc to show all • q to quit")
+		return editorBoxStyle.Render(sb.String())
+	}
+
+	for i, opt := range m.leadResults {
+		cursor := "  "
+		if i == m.leadCursor {
+			cursor = "> "
+		}
+
+		noun := "dossiers"
+		if opt.count == 1 {
+			noun = "dossier"
+		}
+		line := fmt.Sprintf("%-24s %d %s", opt.filter.label(), opt.count, noun)
+		if i == m.leadCursor {
+			sb.WriteString(focusedItemStyle.Render(cursor + line))
+		} else {
+			sb.WriteString(cursor + line)
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("\n")
+	sb.WriteString("type to search • ↑/↓ to move • enter to open • esc to show all")
+	return editorBoxStyle.Render(sb.String())
+}
+
 func (m Model) renderLinkInput() string {
 	var sb strings.Builder
 	sb.WriteString("Link Session Content:\n\n")
@@ -1510,12 +1800,20 @@ func (m Model) View() string {
 	}
 
 	switch m.currentView {
+	case ViewLeadSelector:
+		sb.WriteString(subtitleStyle.Render(" Durable memory layer for agentic workflows — Select Lead"))
+		sb.WriteString("\n\n")
+		sb.WriteString(m.renderLeadSelector())
+		sb.WriteString("\n")
+
 	case ViewDashboard:
-		sb.WriteString(subtitleStyle.Render(" Durable memory layer for agentic workflows — Dashboard"))
+		sb.WriteString(subtitleStyle.Render(fmt.Sprintf(" Durable memory layer for agentic workflows — Dashboard · Lead: %s", m.leadFilter.label())))
 		sb.WriteString("\n\n")
 
 		if m.loading && len(m.items) == 0 {
 			sb.WriteString(" Loading dossiers...\n")
+		} else if len(m.visibleItems) == 0 {
+			sb.WriteString(subtitleStyle.Render(fmt.Sprintf(" No dossiers for lead: %s — press f to choose another.\n", m.leadFilter.label())))
 		} else {
 			sb.WriteString(m.table.View())
 			sb.WriteString("\n")
@@ -1655,8 +1953,10 @@ func (m Model) View() string {
 		}
 	}
 
-	keyHelp := "↑/↓: select • enter: detail • s: status • l: lead • p: priority • n: next action • k: link • m: merge • q: quit"
+	keyHelp := "↑/↓: select • enter: detail • f: filter lead • s: status • l: lead • p: priority • n: next action • k: link • m: merge • q: quit"
 	switch m.currentView {
+	case ViewLeadSelector:
+		keyHelp = "type: search • ↑/↓: select • enter: open dashboard • esc: show all • ctrl+c: quit"
 	case ViewDetail:
 		keyHelp = "↑/↓/pgup/pgdn: scroll • s: status • l: lead • p: priority • n: next action • esc: back • q: quit"
 	case ViewStatusPicker:

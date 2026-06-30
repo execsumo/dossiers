@@ -19,6 +19,18 @@ func stripANSI(str string) string {
 	return ansiRegex.ReplaceAllString(str, "")
 }
 
+// enterDashboard advances a model sitting on the startup lead-selector landing
+// screen into the dashboard by selecting the pre-focused "All" option, mirroring
+// what a user does after the list loads.
+func enterDashboard(t *testing.T, m Model) Model {
+	t.Helper()
+	if m.currentView != ViewLeadSelector {
+		return m
+	}
+	newM, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	return newM.(Model)
+}
+
 type testClock struct{}
 
 func (testClock) Now() time.Time {
@@ -203,10 +215,10 @@ func TestTUI_Dashboard(t *testing.T) {
 		t.Fatal("expected Init cmd to not be nil")
 	}
 
-	// Verify view rendering before loading items
+	// Verify the startup landing screen shows a loading indicator before items load
 	viewStr := m.View()
-	if !strings.Contains(viewStr, "Loading dossiers") {
-		t.Errorf("expected view to contain loading indicator, got:\n%s", viewStr)
+	if !strings.Contains(viewStr, "Loading leads") {
+		t.Errorf("expected landing view to contain loading indicator, got:\n%s", viewStr)
 	}
 
 	// Perform the async load manually
@@ -220,6 +232,9 @@ func TestTUI_Dashboard(t *testing.T) {
 	if len(updatedModel.items) != 1 {
 		t.Fatalf("expected 1 item, got %d", len(updatedModel.items))
 	}
+
+	// Select "All" on the landing screen to reach the dashboard
+	updatedModel = enterDashboard(t, updatedModel)
 
 	// Trigger a mock window resize to initialize columns and height
 	newM, _ = updatedModel.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
@@ -256,6 +271,7 @@ func TestTUI_Detail(t *testing.T) {
 	listMsg := m.listDossiersCmd()()
 	newM, _ := m.Update(listMsg)
 	m = newM.(Model)
+	m = enterDashboard(t, m)
 
 	// Move cursor down to select the actual item, not the separator row
 	m.table.MoveDown(1)
@@ -311,6 +327,7 @@ func TestTUI_InlineEditing(t *testing.T) {
 	listMsg := m.listDossiersCmd()()
 	newM, _ := m.Update(listMsg)
 	m = newM.(Model)
+	m = enterDashboard(t, m)
 
 	// Move cursor down to select actual item
 	m.table.MoveDown(1)
@@ -400,6 +417,7 @@ func TestTUI_NoActiveBinding(t *testing.T) {
 	listMsg := m.listDossiersCmd()()
 	newM, _ := m.Update(listMsg)
 	m = newM.(Model)
+	m = enterDashboard(t, m)
 
 	// The dashboard must not render an active-dossier star marker.
 	viewStr := m.View()
@@ -439,6 +457,7 @@ func TestTUI_Link(t *testing.T) {
 	listMsg := m.listDossiersCmd()()
 	newM, _ := m.Update(listMsg)
 	m = newM.(Model)
+	m = enterDashboard(t, m)
 
 	// Press 'k' key to link
 	newM, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
@@ -521,6 +540,7 @@ func TestTUI_Merge(t *testing.T) {
 	listMsg := m.listDossiersCmd()()
 	newM, _ := m.Update(listMsg)
 	m = newM.(Model)
+	m = enterDashboard(t, m)
 
 	// Move cursor down to select actual item
 	m.table.MoveDown(1)
@@ -592,5 +612,247 @@ func TestHeaderHasNoSession(t *testing.T) {
 		if strings.Contains(view, forbidden) {
 			t.Errorf("expected view NOT to contain %q, got:\n%s", forbidden, view)
 		}
+	}
+}
+
+func TestDeriveLeadOptions(t *testing.T) {
+	items := []core.ListItem{
+		{ID: "1", Name: "Alpha", Lead: "Bob"},
+		{ID: "2", Name: "Beta", Lead: ""},
+		{ID: "3", Name: "Gamma", Lead: "alice"},
+		{ID: "4", Name: "Delta", Lead: "Bob"},
+		{ID: "", Name: "placeholder"}, // header/placeholder row must be ignored
+	}
+
+	got := deriveLeadOptions(items)
+
+	// All and Unassigned are pinned first; named leads follow case-insensitively sorted.
+	want := []leadOption{
+		{filter: leadFilter{kind: filterAll}, count: 4},
+		{filter: leadFilter{kind: filterUnassigned}, count: 1},
+		{filter: leadFilter{kind: filterByName, name: "alice"}, count: 1},
+		{filter: leadFilter{kind: filterByName, name: "Bob"}, count: 2},
+	}
+
+	if len(got) != len(want) {
+		t.Fatalf("got %d options, want %d: %+v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("option %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestDeriveLeadOptionsEmpty(t *testing.T) {
+	got := deriveLeadOptions(nil)
+	if len(got) != 2 {
+		t.Fatalf("expected All + Unassigned even with no items, got %d", len(got))
+	}
+	if got[0].filter.kind != filterAll || got[0].count != 0 {
+		t.Errorf("expected All with count 0, got %+v", got[0])
+	}
+	if got[1].filter.kind != filterUnassigned || got[1].count != 0 {
+		t.Errorf("expected Unassigned with count 0, got %+v", got[1])
+	}
+}
+
+func TestFilterLeadOptions(t *testing.T) {
+	opts := []leadOption{
+		{filter: leadFilter{kind: filterAll}},
+		{filter: leadFilter{kind: filterUnassigned}},
+		{filter: leadFilter{kind: filterByName, name: "Alice"}},
+		{filter: leadFilter{kind: filterByName, name: "Bob"}},
+	}
+
+	tests := []struct {
+		name  string
+		query string
+		want  []string // expected labels in order
+	}{
+		{"empty returns all", "", []string{"All", "Unassigned", "Alice", "Bob"}},
+		{"case-insensitive substring", "ali", []string{"Alice"}},
+		{"matches pinned labels too", "una", []string{"Unassigned"}},
+		{"whitespace trimmed", "  bob ", []string{"Bob"}},
+		{"no match", "zzz", nil},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := filterLeadOptions(opts, tc.query)
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %d results, want %d: %+v", len(got), len(tc.want), got)
+			}
+			for i, label := range tc.want {
+				if got[i].filter.label() != label {
+					t.Errorf("result %d = %q, want %q", i, got[i].filter.label(), label)
+				}
+			}
+		})
+	}
+}
+
+func TestLeadFilterMatches(t *testing.T) {
+	bob := core.ListItem{ID: "1", Lead: "Bob"}
+	none := core.ListItem{ID: "2", Lead: ""}
+
+	cases := []struct {
+		name   string
+		filter leadFilter
+		item   core.ListItem
+		want   bool
+	}{
+		{"all matches assigned", leadFilter{kind: filterAll}, bob, true},
+		{"all matches unassigned", leadFilter{kind: filterAll}, none, true},
+		{"unassigned matches empty lead", leadFilter{kind: filterUnassigned}, none, true},
+		{"unassigned rejects assigned", leadFilter{kind: filterUnassigned}, bob, false},
+		{"byName matches exact", leadFilter{kind: filterByName, name: "Bob"}, bob, true},
+		{"byName rejects other", leadFilter{kind: filterByName, name: "Bob"}, none, false},
+	}
+
+	for _, tc := range cases {
+		if got := tc.filter.matches(tc.item); got != tc.want {
+			t.Errorf("%s: matches = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestChooseLeadFiltersDashboard verifies the landing selection narrows the
+// visible item set the dashboard's cursor lookups index into.
+func TestChooseLeadFiltersDashboard(t *testing.T) {
+	store := newTestStore()
+	svc := setupTestService(store)
+	m := NewModel(svc)
+
+	m.items = []core.ListItem{
+		{ID: "1", Name: "Alpha", Lead: "Bob"},
+		{ID: "2", Name: "Beta", Lead: "Alice"},
+		{ID: "3", Name: "Gamma", Lead: "Bob"},
+	}
+	m.leadOptions = deriveLeadOptions(m.items)
+	m.leadResults = m.leadOptions
+
+	// Select "Bob" (index 3: All, Unassigned, Alice, Bob).
+	m.leadCursor = 3
+	m.chooseLead()
+
+	if m.currentView != ViewDashboard {
+		t.Fatalf("expected dashboard after choosing lead, got view %d", m.currentView)
+	}
+	if got := len(m.visibleItems); got != 2 {
+		t.Fatalf("expected 2 visible dossiers for Bob, got %d", got)
+	}
+	for _, item := range m.visibleItems {
+		if item.Lead != "Bob" {
+			t.Errorf("visible item %q has lead %q, want Bob", item.Name, item.Lead)
+		}
+	}
+}
+
+// TestStatusTierSort guards against the regression where fetching all statuses
+// for lead filtering let a high-priority archived dossier sort above active work.
+func TestStatusTierSort(t *testing.T) {
+	store := newTestStore()
+	store.dossiers["arch"] = &core.Dossier{
+		Frontmatter: core.Frontmatter{
+			ID:            "arch",
+			Name:          "Archived Important",
+			Slug:          "arch",
+			Status:        core.StatusArchived,
+			Importance:    core.ImportanceHigh,
+			Urgency:       core.UrgencyHigh,
+			LastTouchedAt: testClock{}.Now(),
+		},
+	}
+	store.dossiers["act"] = &core.Dossier{
+		Frontmatter: core.Frontmatter{
+			ID:            "act",
+			Name:          "Active Minor",
+			Slug:          "act",
+			Status:        core.StatusActive,
+			Importance:    core.ImportanceLow,
+			Urgency:       core.UrgencyLow,
+			LastTouchedAt: testClock{}.Now(),
+		},
+	}
+	svc := setupTestService(store)
+	m := NewModel(svc)
+	m.width = 100
+	m.height = 40
+	m.recalculateTableLayout()
+
+	listMsg := m.listDossiersCmd()()
+	newM, _ := m.Update(listMsg)
+	m = newM.(Model)
+
+	if len(m.items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(m.items))
+	}
+	if m.items[0].ID != "act" {
+		t.Errorf("expected active dossier first despite lower priority, got %q first", m.items[0].ID)
+	}
+}
+
+// TestEnterRecallsFilteredDossier exercises the exact desync the visibleItems
+// refactor exists to prevent: with a lead filter active, pressing enter on the
+// first visible row must recall that dossier, not the same index of the full list.
+func TestEnterRecallsFilteredDossier(t *testing.T) {
+	store := newTestStore()
+	store.dossiers["dos1"] = &core.Dossier{
+		Frontmatter: core.Frontmatter{
+			ID:            "dos1",
+			Name:          "Bob Item",
+			Slug:          "bob-item",
+			Status:        core.StatusActive,
+			Lead:          "Bob",
+			LastTouchedAt: testClock{}.Now(),
+		},
+	}
+	store.dossiers["dos2"] = &core.Dossier{
+		Frontmatter: core.Frontmatter{
+			ID:            "dos2",
+			Name:          "Alice Item",
+			Slug:          "alice-item",
+			Status:        core.StatusActive,
+			Lead:          "Alice",
+			LastTouchedAt: testClock{}.Now(),
+		},
+	}
+	svc := setupTestService(store)
+	m := NewModel(svc)
+	m.width = 100
+	m.height = 40
+	m.recalculateTableLayout()
+
+	listMsg := m.listDossiersCmd()()
+	newM, _ := m.Update(listMsg)
+	m = newM.(Model)
+
+	// On the landing screen, search for "Bob" and select the lead.
+	for _, r := range "Bob" {
+		newM, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = newM.(Model)
+	}
+	newM, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = newM.(Model)
+
+	if m.currentView != ViewDashboard {
+		t.Fatalf("expected dashboard after selecting lead, got view %d", m.currentView)
+	}
+	if len(m.visibleItems) != 1 || m.visibleItems[0].ID != "dos1" {
+		t.Fatalf("expected only Bob's dossier visible, got %+v", m.visibleItems)
+	}
+
+	// Enter on row 0 must recall Bob's dossier.
+	m.table.SetCursor(0)
+	newM, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = newM.(Model)
+	if cmd == nil {
+		t.Fatal("expected enter to return a recall command")
+	}
+	newM, _ = m.Update(cmd())
+	m = newM.(Model)
+	if m.recallResult.Frontmatter.ID != "dos1" {
+		t.Errorf("filtered enter recalled %q, want dos1 (Bob)", m.recallResult.Frontmatter.ID)
 	}
 }
