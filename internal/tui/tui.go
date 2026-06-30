@@ -1668,7 +1668,14 @@ func (m Model) renderLeadSelector() string {
 		return editorBoxStyle.Render(sb.String())
 	}
 
-	for i, opt := range m.leadResults {
+	// Render only the window of options around the cursor so a long lead list
+	// scrolls instead of overflowing the screen.
+	start, end := m.leadWindow()
+	if start > 0 {
+		sb.WriteString(subtitleStyle.Render(fmt.Sprintf("  ↑ %d more above\n", start)))
+	}
+	for i := start; i < end; i++ {
+		opt := m.leadResults[i]
 		cursor := "  "
 		if i == m.leadCursor {
 			cursor = "> "
@@ -1686,10 +1693,46 @@ func (m Model) renderLeadSelector() string {
 		}
 		sb.WriteString("\n")
 	}
+	if end < len(m.leadResults) {
+		sb.WriteString(subtitleStyle.Render(fmt.Sprintf("  ↓ %d more below\n", len(m.leadResults)-end)))
+	}
 
 	sb.WriteString("\n")
 	sb.WriteString("type to search • ↑/↓ to move • enter to open • esc to show all")
 	return editorBoxStyle.Render(sb.String())
+}
+
+// leadVisibleRows is how many option rows the lead selector shows at once,
+// derived from the terminal height. Remaining rows scroll into view with the
+// cursor. The constant reserves space for the screen chrome (title, subtitle,
+// box padding, intro line, search box, the two "more" indicators, help, footer).
+func (m Model) leadVisibleRows() int {
+	const chrome = 14
+	rows := m.height - chrome
+	if rows < 3 {
+		rows = 3
+	}
+	return rows
+}
+
+// leadWindow returns the [start, end) slice of leadResults to render, scrolled so
+// the cursor stays visible and roughly centered within the available height.
+func (m Model) leadWindow() (start, end int) {
+	n := len(m.leadResults)
+	h := m.leadVisibleRows()
+	if h >= n {
+		return 0, n
+	}
+	start = m.leadCursor - h/2
+	if start < 0 {
+		start = 0
+	}
+	end = start + h
+	if end > n {
+		end = n
+		start = end - h
+	}
+	return start, end
 }
 
 func (m Model) renderLinkInput() string {

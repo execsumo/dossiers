@@ -856,3 +856,69 @@ func TestEnterRecallsFilteredDossier(t *testing.T) {
 		t.Errorf("filtered enter recalled %q, want dos1 (Bob)", m.recallResult.Frontmatter.ID)
 	}
 }
+
+// TestLeadSelectorWindowing verifies the lead landing screen scrolls a long
+// option list: only a height-bounded window renders, the cursor row is always
+// visible, and "more above/below" indicators appear when content is clipped.
+func TestLeadSelectorWindowing(t *testing.T) {
+	store := newTestStore()
+	svc := setupTestService(store)
+	m := NewModel(svc)
+	m.width = 100
+	m.height = 20 // leadVisibleRows = 20 - 14 = 6
+	m.loading = false
+	m.items = []core.ListItem{{ID: "x", Lead: "anchor"}} // non-empty so loading branch is skipped
+
+	for i := 0; i < 50; i++ {
+		m.leadResults = append(m.leadResults, leadOption{
+			filter: leadFilter{kind: filterByName, name: fmt.Sprintf("Lead%02d", i)},
+			count:  1,
+		})
+	}
+
+	countOptionLines := func(view string) int {
+		n := 0
+		for _, line := range strings.Split(view, "\n") {
+			if strings.Contains(line, "1 dossier") {
+				n++
+			}
+		}
+		return n
+	}
+
+	// Cursor at top: window shows the head, only a "below" indicator.
+	m.leadCursor = 0
+	top := stripANSI(m.renderLeadSelector())
+	if got := countOptionLines(top); got > 6 {
+		t.Errorf("expected at most 6 visible option rows, got %d", got)
+	}
+	if !strings.Contains(top, "Lead00") {
+		t.Errorf("cursor row Lead00 not visible:\n%s", top)
+	}
+	if strings.Contains(top, "more above") {
+		t.Errorf("did not expect an 'up' indicator at the top:\n%s", top)
+	}
+	if !strings.Contains(top, "more below") {
+		t.Errorf("expected a 'down' indicator at the top:\n%s", top)
+	}
+
+	// Cursor at bottom: window shows the tail, only an "above" indicator.
+	m.leadCursor = 49
+	bottom := stripANSI(m.renderLeadSelector())
+	if !strings.Contains(bottom, "Lead49") {
+		t.Errorf("cursor row Lead49 not visible:\n%s", bottom)
+	}
+	if !strings.Contains(bottom, "more above") {
+		t.Errorf("expected an 'up' indicator at the bottom:\n%s", bottom)
+	}
+	if strings.Contains(bottom, "more below") {
+		t.Errorf("did not expect a 'down' indicator at the bottom:\n%s", bottom)
+	}
+
+	// Cursor in the middle keeps its own row visible.
+	m.leadCursor = 25
+	mid := stripANSI(m.renderLeadSelector())
+	if !strings.Contains(mid, "Lead25") {
+		t.Errorf("cursor row Lead25 not visible:\n%s", mid)
+	}
+}
