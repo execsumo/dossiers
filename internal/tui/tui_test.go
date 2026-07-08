@@ -392,6 +392,28 @@ func TestTUI_InlineEditing(t *testing.T) {
 	}
 }
 
+// TestStartEditPropagatesBaseRevision guards against a regression where
+// startEditStatus/startEditLead forgot to copy the target's base revision into
+// the model, leaving a stale (or empty) revision from whatever edit ran
+// previously. Against the real store that stale revision causes a spurious
+// concurrency-conflict on save, so the user's status/lead change is silently
+// rejected instead of applied.
+func TestStartEditPropagatesBaseRevision(t *testing.T) {
+	target := targetDossier{id: "dos1", name: "Project Alpha", baseRevision: "rev_abc123"}
+
+	var m Model
+	m.startEditStatus(target)
+	if m.targetBaseRevision != "rev_abc123" {
+		t.Errorf("startEditStatus: targetBaseRevision = %q, want %q", m.targetBaseRevision, "rev_abc123")
+	}
+
+	m = Model{}
+	m.startEditLead(target)
+	if m.targetBaseRevision != "rev_abc123" {
+		t.Errorf("startEditLead: targetBaseRevision = %q, want %q", m.targetBaseRevision, "rev_abc123")
+	}
+}
+
 // TestTUI_NoActiveBinding asserts the TUI exposes no per-session "active"
 // affordance: pressing 'a' is a no-op, and the dashboard has no ★ marker. The
 // per-session active binding (Switch) is intentionally not reachable from the
@@ -621,17 +643,21 @@ func TestDeriveLeadOptions(t *testing.T) {
 		{ID: "2", Name: "Beta", Lead: ""},
 		{ID: "3", Name: "Gamma", Lead: "alice"},
 		{ID: "4", Name: "Delta", Lead: "Bob"},
+		{ID: "5", Name: "Epsilon", Lead: "Bob", Status: "archived"},
 		{ID: "", Name: "placeholder"}, // header/placeholder row must be ignored
 	}
 
-	got := deriveLeadOptions(items)
+	got := deriveLeadOptions(items, true)
 
-	// All and Unassigned are pinned first; named leads follow case-insensitively sorted.
+	// All and Unassigned are pinned first; named leads follow case-insensitively
+	// sorted; the archived/resolved toggle is always last. The archived item is
+	// excluded from every count above since hideResolvedArchived is true.
 	want := []leadOption{
 		{filter: leadFilter{kind: filterAll}, count: 4},
 		{filter: leadFilter{kind: filterUnassigned}, count: 1},
 		{filter: leadFilter{kind: filterByName, name: "alice"}, count: 1},
 		{filter: leadFilter{kind: filterByName, name: "Bob"}, count: 2},
+		{isArchivedToggle: true, count: 1},
 	}
 
 	if len(got) != len(want) {
@@ -642,18 +668,39 @@ func TestDeriveLeadOptions(t *testing.T) {
 			t.Errorf("option %d = %+v, want %+v", i, got[i], want[i])
 		}
 	}
+
+	// With hideResolvedArchived false, the archived item counts toward Bob and All.
+	shown := deriveLeadOptions(items, false)
+	wantShown := []leadOption{
+		{filter: leadFilter{kind: filterAll}, count: 5},
+		{filter: leadFilter{kind: filterUnassigned}, count: 1},
+		{filter: leadFilter{kind: filterByName, name: "alice"}, count: 1},
+		{filter: leadFilter{kind: filterByName, name: "Bob"}, count: 3},
+		{isArchivedToggle: true, count: 1},
+	}
+	if len(shown) != len(wantShown) {
+		t.Fatalf("got %d options, want %d: %+v", len(shown), len(wantShown), shown)
+	}
+	for i := range wantShown {
+		if shown[i] != wantShown[i] {
+			t.Errorf("option %d = %+v, want %+v", i, shown[i], wantShown[i])
+		}
+	}
 }
 
 func TestDeriveLeadOptionsEmpty(t *testing.T) {
-	got := deriveLeadOptions(nil)
-	if len(got) != 2 {
-		t.Fatalf("expected All + Unassigned even with no items, got %d", len(got))
+	got := deriveLeadOptions(nil, true)
+	if len(got) != 3 {
+		t.Fatalf("expected All + Unassigned + archived toggle even with no items, got %d", len(got))
 	}
 	if got[0].filter.kind != filterAll || got[0].count != 0 {
 		t.Errorf("expected All with count 0, got %+v", got[0])
 	}
 	if got[1].filter.kind != filterUnassigned || got[1].count != 0 {
 		t.Errorf("expected Unassigned with count 0, got %+v", got[1])
+	}
+	if !got[2].isArchivedToggle || got[2].count != 0 {
+		t.Errorf("expected archived toggle with count 0, got %+v", got[2])
 	}
 }
 
@@ -729,7 +776,7 @@ func TestChooseLeadFiltersDashboard(t *testing.T) {
 		{ID: "2", Name: "Beta", Lead: "Alice"},
 		{ID: "3", Name: "Gamma", Lead: "Bob"},
 	}
-	m.leadOptions = deriveLeadOptions(m.items)
+	m.leadOptions = deriveLeadOptions(m.items, m.hideResolvedArchived)
 	m.leadResults = m.leadOptions
 
 	// Select "Bob" (index 3: All, Unassigned, Alice, Bob).
@@ -790,6 +837,76 @@ func TestStatusTierSort(t *testing.T) {
 	}
 	if m.items[0].ID != "act" {
 		t.Errorf("expected active dossier first despite lower priority, got %q first", m.items[0].ID)
+	}
+}
+
+// TestArchivedHiddenByDefault verifies resolved/archived dossiers stay out of
+// the dashboard's visible items until the user toggles them on via the filter
+// screen's archived/resolved row.
+func TestArchivedHiddenByDefault(t *testing.T) {
+	store := newTestStore()
+	store.dossiers["arch"] = &core.Dossier{
+		Frontmatter: core.Frontmatter{
+			ID:            "arch",
+			Name:          "Old Project",
+			Slug:          "arch",
+			Status:        core.StatusArchived,
+			LastTouchedAt: testClock{}.Now(),
+		},
+	}
+	store.dossiers["res"] = &core.Dossier{
+		Frontmatter: core.Frontmatter{
+			ID:            "res",
+			Name:          "Done Project",
+			Slug:          "res",
+			Status:        core.StatusResolved,
+			LastTouchedAt: testClock{}.Now(),
+		},
+	}
+	store.dossiers["act"] = &core.Dossier{
+		Frontmatter: core.Frontmatter{
+			ID:            "act",
+			Name:          "Live Project",
+			Slug:          "act",
+			Status:        core.StatusActive,
+			LastTouchedAt: testClock{}.Now(),
+		},
+	}
+	svc := setupTestService(store)
+	m := NewModel(svc)
+	m.width = 100
+	m.height = 40
+	m.recalculateTableLayout()
+
+	listMsg := m.listDossiersCmd()()
+	newM, _ := m.Update(listMsg)
+	m = newM.(Model)
+	m = enterDashboard(t, m)
+
+	if !m.hideResolvedArchived {
+		t.Fatal("expected hideResolvedArchived to default to true")
+	}
+	if len(m.visibleItems) != 1 || m.visibleItems[0].ID != "act" {
+		t.Fatalf("expected only the active dossier visible by default, got %+v", m.visibleItems)
+	}
+
+	// Open the filter screen and select the archived/resolved toggle (last row).
+	m.openLeadSelector()
+	m.leadCursor = len(m.leadResults) - 1
+	if !m.leadResults[m.leadCursor].isArchivedToggle {
+		t.Fatalf("expected last row to be the archived toggle, got %+v", m.leadResults[m.leadCursor])
+	}
+	newM, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = newM.(Model)
+
+	if m.currentView != ViewDashboard {
+		t.Fatalf("expected toggle to return to ViewDashboard, got %v", m.currentView)
+	}
+	if m.hideResolvedArchived {
+		t.Fatal("expected hideResolvedArchived to flip to false")
+	}
+	if len(m.visibleItems) != 3 {
+		t.Fatalf("expected all 3 dossiers visible after toggling, got %+v", m.visibleItems)
 	}
 }
 
