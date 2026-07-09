@@ -10,7 +10,17 @@ No database, no cloud, no account. Your data is plain Markdown under `~/.dossier
 
 Requires **Claude Code** on macOS or Linux.
 
-**Option A — prebuilt binary (recommended)**
+**Option A — Homebrew (recommended)**
+
+```bash
+brew tap execsumo/tap
+brew install dossier
+dossier init        # wires up Claude Code
+```
+
+To update later, on any device: `brew upgrade dossier` (or just `brew upgrade`). The tap's formula is republished automatically on every release, so this always tracks latest.
+
+**Option B — prebuilt binary**
 
 Download the latest release for your platform from the [Releases page](https://github.com/execsumo/dossiers/releases), make it executable, and run `init`:
 
@@ -21,7 +31,9 @@ chmod +x dossier
 ./dossier init        # installs to a stable PATH, then wires up Claude Code
 ```
 
-**Option B — build from source** (requires Go 1.26+)
+To update later, repeat the download step, then re-run `./dossier install && ./dossier init` to re-bind the stable path.
+
+**Option C — build from source** (requires Go 1.26+)
 
 ```bash
 git clone https://github.com/execsumo/dossiers.git
@@ -108,6 +120,7 @@ One Go binary serves the CLI, the MCP-over-stdio server, and the session hooks. 
 - **Config lives in two files.** Hooks go in `~/.claude/settings.json`; the MCP server goes in `~/.claude.json` (the only place Claude Code reads user-scope MCP servers). Both store the absolute path of the stable binary — if you rebuild, rename, or move it, re-run `dossier install` then `dossier init` to re-bind, idempotently.
 - **Token counts are estimates.** Dossier uses a BPE tokenizer benchmarked against Opus 4.8; it won't match every model exactly. The 100k-token figure is a configurable warning threshold, not a hard cap — Dossier warns, it never silently truncates.
 - **Wiring it up by hand.** If you'd rather not let `init` edit your config: register the MCP server with `claude mcp add dossier -- dossier mcp serve`, and run `dossier hook session-start` to see what the start hook emits.
+- **Switching install methods.** `dossier install` (Option B) puts the binary at `~/.local/bin/dossier`; Homebrew (Option A) puts it under its own prefix (e.g. `/opt/homebrew/bin/dossier`). If both are present, whichever comes first on your `PATH` wins — `brew` will warn you ("shadowed by...") if that happens. Pick one method per machine to avoid confusion about which binary is actually running.
 
 ## License
 
