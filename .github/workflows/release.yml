@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.1.11). Created if it does not already exist.'
+        required: true
 
 permissions:
   contents: write
@@ -12,6 +17,8 @@ jobs:
   build:
     name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
     strategy:
       matrix:
         include:
@@ -31,13 +38,17 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Resolve version
+        id: version
+        run: echo "value=${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
       - name: Build
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
         run: |
-          go build -trimpath -ldflags="-s -w -X main.version=${{ github.ref_name }}" \
+          go build -trimpath -ldflags="-s -w -X main.version=${{ steps.version.outputs.value }}" \
             -o dossier-${{ matrix.goos }}-${{ matrix.goarch }} \
             ./cmd/dossier
 
@@ -61,6 +72,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.build.outputs.version }}
           files: |
             dossier-*
             checksums.txt
