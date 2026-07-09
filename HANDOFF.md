@@ -42,6 +42,75 @@ All features (CLI, MCP, and Rich TUI) are fully operational, tested, and integra
 
 
 
+## Planned: `dossier-delegate` skill (design captured 2026-06-30 — NOT wired up)
+
+**Not part of the shipped product yet.** A real, working `SKILL.md` exists at
+`~/.claude/skills/dossier-delegate/SKILL.md` (global, personal, testable via
+`/dossier-delegate` today) but is deliberately **not** bundled into
+`assets/`, `dossier init`'s embed, or the harness install path — that
+integration is an explicit follow-up, not assumed.
+
+**Problem:** the user delegates work captured in Dossiers to an overseas team
+on an ~8-hour offset. An undefined success criterion or escalation path
+doesn't cost a Slack reply there — it costs a full lost day. The user wants
+best-practice delegation structure (clear output, validation criteria,
+escalation path, decision rights) *available* on a Dossier, but explicitly
+**not enforced** — it must never become required overhead on the
+zero-friction "dossiers start organically and quickly" flow that's working
+today.
+
+**Design (see the skill file for full detail):**
+- **Pull-only, explicit invocation** — a slash command / trigger phrases
+  ("help me define this exercise," "let's clarify so we can delegate"),
+  never triggered by dossier state (no auto-fire off a thin `next_action` or
+  a `lead` being set).
+- **Method is a stall-simulation, not a fixed rubric:** "read this as the
+  teammate, waking up with no way to reach the sender for hours — where do
+  they stall?" Biases toward **Decision Rights** and **Escalation** first —
+  the two categories that actually cause a full-day loss on an offset team —
+  before Objective/Context/Constraints, which are usually already implicit.
+  Output is binary/qualitative (name the missing fact, or say "ready") —
+  **never a completeness score**, which would recreate the enforcement feel
+  the user is avoiding.
+- **Persisted contract vs. rendered note (resolves a real tension):** the
+  outbound note is verbose by design (frontloading is the point); the
+  Distilled State is terse by design (the Distillation Guide fights bloat).
+  Resolution: persist a *compressed* delegation contract (Objective /
+  Success Criteria / Validation / Constraints / Decision Rights / Escalation)
+  into the Dossier body via the existing `Save` path — so it's
+  optimistic-concurrency protected and every change lands in the audit log
+  with a field-level diff. That answers the user's "how do I check success
+  criteria was met without moving the goalpost on my team" concern: the
+  goalpost can still move, but never silently — a later re-render must flag
+  drift between the persisted contract and current dossier state rather than
+  silently rendering the new state as original. The paste-able Slack/Jira
+  note is then a pure rendering of that persisted contract, regenerated on
+  demand, never inventing new criteria at render time.
+- **Return contract:** the teammate has no MCP access (human, async, Slack/
+  Jira) — the note defines the exact shape of their expected reply so it can
+  be pasted back into the Dossier later, rather than assuming they can write
+  to the store themselves.
+- Reuses existing frontmatter fields (`next_action`, `open_questions`,
+  `lead`) as the pre-delegation gap-tracking home wherever possible — no
+  core/SPEC schema change for v1.
+
+**Explicitly deferred (named, not forgotten):**
+- Bundling into `dossier init`'s installed asset set.
+- A new `delegation_note` artifact type — the existing SPEC §4.3 artifact
+  taxonomy (transcript/source_snapshot/file_snapshot/link/query/
+  decision_evidence) is entirely about *captured* source material, not
+  synthesized outbound documents, so a generated note doesn't cleanly fit
+  today's artifact model. Revisit only if rendered-note-only proves
+  insufficient in practice.
+- Per-teammate formatting/escalation preferences.
+- Scoping a contract to a single Next Step vs. the whole Dossier (multiple
+  concurrent delegated threads on one topic).
+
+**Grounded in:** Anthropic's agent-design/context-engineering writing,
+Karpathy's autoresearch loop, and this environment's own `delegate` skill's
+7-block Spec Contract (`~/.claude/skills/delegate/SKILL.md`) — adapted here
+for a human, async, offset delegate rather than a supervised agent.
+
 ## Resolved decisions (the foundation)
 
 Product (from `PRD.md` §0):

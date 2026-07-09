@@ -1996,28 +1996,28 @@ func (m Model) View() string {
 		}
 	}
 
-	keyHelp := "↑/↓: select • enter: detail • f: filter lead • s: status • l: lead • p: priority • n: next action • k: link • m: merge • q: quit"
+	keyHelp := "↑/↓: select • f: filter lead • s: status • l: lead • p: priority • n: next action • k: link • m: merge"
 	switch m.currentView {
 	case ViewLeadSelector:
-		keyHelp = "type: search • ↑/↓: select • enter: open dashboard • esc: show all • ctrl+c: quit"
+		keyHelp = "type: search • ↑/↓: select • esc: show all"
 	case ViewDetail:
-		keyHelp = "↑/↓/pgup/pgdn: scroll • s: status • l: lead • p: priority • n: next action • esc: back • q: quit"
+		keyHelp = "↑/↓/pgup/pgdn: scroll • s: status • l: lead • p: priority • n: next action • esc: back"
 	case ViewStatusPicker:
-		keyHelp = "↑/↓: select status • enter: confirm • esc: cancel"
+		keyHelp = "↑/↓: select status • esc: cancel"
 	case ViewNextActionEditor:
-		keyHelp = "enter: save next action • esc: cancel"
+		keyHelp = "esc: cancel"
 	case ViewLeadEditor:
-		keyHelp = "enter: save lead • esc: cancel"
+		keyHelp = "esc: cancel"
 	case ViewPriorityEditor:
-		keyHelp = "↑/↓: focus • ←/→: cycle priority • enter: cycle/save • esc: cancel"
+		keyHelp = "↑/↓: focus • ←/→: cycle priority • esc: cancel"
 	case ViewLinkInput:
-		keyHelp = "enter: analyze matching candidates • esc: cancel"
+		keyHelp = "esc: cancel"
 	case ViewLinkSelector:
-		keyHelp = "↑/↓: select target dossier • enter: link • esc: cancel"
+		keyHelp = "↑/↓: select target dossier • esc: cancel"
 	case ViewMergeSelector:
-		keyHelp = "↑/↓: select target dossier • enter: merge • esc: cancel"
+		keyHelp = "↑/↓: select target dossier • esc: cancel"
 	case ViewMergeConflictResolver:
-		keyHelp = "↑/↓/pgup/pgdn: scroll diff • tab: switch button • enter: confirm • esc: cancel"
+		keyHelp = "↑/↓/pgup/pgdn: scroll diff • tab: switch button • esc: cancel"
 	}
 	footerParts = append(footerParts, keyHelp)
 
