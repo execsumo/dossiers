@@ -1040,6 +1040,30 @@ func NewRootCmd() *cobra.Command {
 				sessID, _ = resolveSessionID()
 			}
 
+			transcript := payload.Transcript
+			if transcript == "" && sessID != "" {
+				home, err := os.UserHomeDir()
+				if err == nil {
+					projectsDir := filepath.Join(home, ".claude", "projects")
+					var transcriptPath string
+					_ = filepath.Walk(projectsDir, func(path string, info os.FileInfo, err error) error {
+						if err != nil {
+							return nil
+						}
+						if !info.IsDir() && info.Name() == sessID+".jsonl" {
+							transcriptPath = path
+							return fmt.Errorf("found")
+						}
+						return nil
+					})
+					if transcriptPath != "" {
+						if b, err := os.ReadFile(transcriptPath); err == nil {
+							transcript = string(b)
+						}
+					}
+				}
+			}
+
 			switch args[0] {
 			case "session-start":
 				resText, err := svc.SessionStart(context.Background(), sessID)
@@ -1050,7 +1074,7 @@ func NewRootCmd() *cobra.Command {
 				fmt.Print(resText)
 
 			case "session-end", "pre-compaction":
-				err := svc.SessionEnd(context.Background(), sessID, payload.DistilledState, payload.Transcript)
+				err := svc.SessionEnd(context.Background(), sessID, payload.DistilledState, transcript)
 				if err != nil {
 					fmt.Printf("Session end hook failed: %v\n", err)
 					os.Exit(1)

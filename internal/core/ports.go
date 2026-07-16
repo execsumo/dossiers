@@ -20,6 +20,9 @@ type Store interface {
 	ListArtifacts(dossierID string) ([]Artifact, error)
 	AppendAudit(dossierID string, e AuditEvent) error
 	ReadAuditLog(dossierID string) ([]AuditEvent, error)
+	ValidateAuditShards(dossierID string) []string
+	EnsureAuditDir(dossierID string) error
+	WriteSessionStash(dossierID string, author string, sessionID string, content string) error
 
 	// Session bindings
 	SaveSessionBinding(binding *SessionBinding) error

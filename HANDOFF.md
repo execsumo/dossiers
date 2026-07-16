@@ -50,7 +50,7 @@ All features (CLI, MCP, and Rich TUI) are fully operational, tested, and integra
 3. **Phase 3 — Onboarding + auto-sync**: `dossier team create|join`; sync piggybacks on Recall/Save/session hooks (async/debounced, never blocks); TUI/doctor/MCP surfacing. No daemon.
 4. **Phase 4 — Docs, dogfood, hardening**: README for the least technical teammate, PRD/SPEC amendments, failure drills, two-colleague pilot.
 
-**Status:** Plan docs committed (this entry, ADR 0005, B12, plan doc, CLAUDE.md premise update). **Phase 1 delegated to a herdr delegate agent (antigravity) on 2026-07-15** — check the delegate's worktree/PR state before starting Phase 1 work yourself; if the delegation died with no output, Phase 1 in the plan doc is self-contained enough to execute directly. Phases 2–4 not started.
+**Status:** Phase 1 (Identity & store layout v2) implemented. Phases 2–4 not started.
 
 **Resume here if interrupted:** read `docs/team-sync-plan.md`, then check `git log team-sync` and open PRs to see which phase landed last. The plan's "Non-negotiables" section + CLAUDE.md's new Team Sync hard rule bind all phases.
 
