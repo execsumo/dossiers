@@ -293,11 +293,10 @@ type Model struct {
 func NewModel(svc *core.Service) Model {
 	// Initialize default empty table
 	columns := []table.Column{
-		{Title: "Name", Width: 18},
-		{Title: "Status", Width: 8},
-		{Title: "Lead", Width: 8},
+		{Title: "Name", Width: 30},
 		{Title: "Priority", Width: 12},
-		{Title: "Next Action", Width: 13},
+		{Title: "Lead", Width: 8},
+		{Title: "Status", Width: 8},
 		{Title: "Due", Width: 8},
 	}
 
@@ -1437,25 +1436,27 @@ type editorFinishedMsg struct {
 	id  string
 }
 
-// populateTableRows maps items into the table rows.
-func (m *Model) tableColumnsConfig() (showPriority, showNextAction, showDue bool) {
+// tableColumnsConfig reports which width-sensitive columns the dashboard shows.
+// Name, Lead, and Status are always present; Priority and Due are revealed
+// progressively as the terminal widens.
+func (m *Model) tableColumnsConfig() (showPriority, showDue bool) {
 	w := m.width
 	if w < 44 {
 		w = 44
 	}
-	return w >= 55, w >= 80, w >= 65
+	return w >= 55, w >= 65
 }
 
-// itemTableRow builds a single dossier row for the given display columns.
-func itemTableRow(item core.ListItem, showPriority, showNextAction, showDue bool) table.Row {
+// itemTableRow builds a single dossier row. Cells mirror the column order
+// Name, [Priority], Lead, Status, [Due]; the optional cells are included only
+// when the corresponding column is shown.
+func itemTableRow(item core.ListItem, showPriority, showDue bool) table.Row {
 	if item.ID == "" {
-		row := table.Row{item.Name, "", ""}
+		row := table.Row{item.Name}
 		if showPriority {
 			row = append(row, "")
 		}
-		if showNextAction {
-			row = append(row, "")
-		}
+		row = append(row, "", "") // Lead, Status
 		if showDue {
 			row = append(row, "")
 		}
@@ -1470,7 +1471,6 @@ func itemTableRow(item core.ListItem, showPriority, showNextAction, showDue bool
 		}
 	}
 
-	statusStr := item.Status
 	var priorityStr string
 	switch item.PriorityScore {
 	case 1:
@@ -1495,36 +1495,29 @@ func itemTableRow(item core.ListItem, showPriority, showNextAction, showDue bool
 		}
 	}
 
-	row := table.Row{
-		item.Name,
-		statusStr,
-		leadStr,
-	}
+	row := table.Row{item.Name}
 	if showPriority {
 		row = append(row, priorityStr)
 	}
-	if showNextAction {
-		row = append(row, item.NextAction)
-	}
+	row = append(row, leadStr, item.Status)
 	if showDue {
 		row = append(row, dueStr)
 	}
 	return row
 }
 
-// extrasToggleTableRow builds the "Show More.../Hide Extras..." row.
-func extrasToggleTableRow(expanded bool, showPriority, showNextAction, showDue bool) table.Row {
+// extrasToggleTableRow builds the "Show More.../Hide Extras..." row, padding
+// empty cells to match the visible column count.
+func extrasToggleTableRow(expanded bool, showPriority, showDue bool) table.Row {
 	label := "Show More..."
 	if expanded {
 		label = "Hide Extras..."
 	}
-	row := table.Row{label, "", ""}
+	row := table.Row{label}
 	if showPriority {
 		row = append(row, "")
 	}
-	if showNextAction {
-		row = append(row, "")
-	}
+	row = append(row, "", "") // Lead, Status
 	if showDue {
 		row = append(row, "")
 	}
@@ -1536,23 +1529,26 @@ func extrasToggleTableRow(expanded bool, showPriority, showNextAction, showDue b
 // expanded extras (visibleItems[liveCount:]) so it always reads as the
 // boundary between the two groups rather than trailing the whole list.
 func (m *Model) populateTableRows() {
-	showPriority, showNextAction, showDue := m.tableColumnsConfig()
+	showPriority, showDue := m.tableColumnsConfig()
 
 	rows := make([]table.Row, 0, len(m.visibleItems)+1)
 	for _, item := range m.visibleItems[:m.liveCount] {
-		rows = append(rows, itemTableRow(item, showPriority, showNextAction, showDue))
+		rows = append(rows, itemTableRow(item, showPriority, showDue))
 	}
 	if m.extrasCount > 0 {
-		rows = append(rows, extrasToggleTableRow(m.extrasExpanded, showPriority, showNextAction, showDue))
+		rows = append(rows, extrasToggleTableRow(m.extrasExpanded, showPriority, showDue))
 	}
 	for _, item := range m.visibleItems[m.liveCount:] {
-		rows = append(rows, itemTableRow(item, showPriority, showNextAction, showDue))
+		rows = append(rows, itemTableRow(item, showPriority, showDue))
 	}
 
 	m.table.SetRows(rows)
 }
 
-// recalculateTableLayout fits the table to the screen size.
+// recalculateTableLayout fits the table to the screen size. Columns appear in
+// the canonical order Name, Priority, Lead, Status, Due; Name is always present
+// and flexes to absorb the leftover width, while the fixed-width columns are
+// revealed progressively as the terminal widens.
 func (m *Model) recalculateTableLayout() {
 	tableHeight := m.height - 7
 	if tableHeight < 3 {
@@ -1560,45 +1556,48 @@ func (m *Model) recalculateTableLayout() {
 	}
 	m.table.SetHeight(tableHeight)
 
-	showPriority, showNextAction, showDue := m.tableColumnsConfig()
+	showPriority, showDue := m.tableColumnsConfig()
 
-	cols := []table.Column{
-		{Title: "Name", Width: 18},
-		{Title: "Status", Width: 8},
-		{Title: "Lead", Width: 8},
-	}
-	usedWidth := 18 + 8 + 8
-	numCols := 3
+	const (
+		widthPriority = 12
+		widthLead     = 8
+		widthStatus   = 8
+		widthDue      = 8
+		minNameWidth  = 12
+	)
 
+	// Tally the fixed-width columns first so Name can take whatever remains.
+	fixedUsed := widthLead + widthStatus
+	numCols := 3 // Name + Lead + Status
 	if showPriority {
-		usedWidth += 12
+		fixedUsed += widthPriority
 		numCols++
 	}
 	if showDue {
-		usedWidth += 8
-		numCols++
-	}
-	if showNextAction {
+		fixedUsed += widthDue
 		numCols++
 	}
 
+	// Per-column padding plus inner borders consume the same space in every row.
 	overhead := (numCols * 2) + (numCols - 1)
+	nameWidth := m.width - fixedUsed - overhead
+	if nameWidth < minNameWidth {
+		nameWidth = minNameWidth
+	}
 
+	cols := []table.Column{{Title: "Name", Width: nameWidth}}
 	if showPriority {
-		cols = append(cols, table.Column{Title: "Priority", Width: 12})
+		cols = append(cols, table.Column{Title: "Priority", Width: widthPriority})
 	}
-	if showNextAction {
-		nextActionWidth := m.width - usedWidth - overhead
-		if nextActionWidth < 12 {
-			nextActionWidth = 12
-		}
-		cols = append(cols, table.Column{Title: "Next Action", Width: nextActionWidth})
-	}
+	cols = append(cols,
+		table.Column{Title: "Lead", Width: widthLead},
+		table.Column{Title: "Status", Width: widthStatus},
+	)
 	if showDue {
-		cols = append(cols, table.Column{Title: "Due", Width: 8})
+		cols = append(cols, table.Column{Title: "Due", Width: widthDue})
 	}
 
-	m.table.SetRows(nil) // Prevent panic from bubbles/table looping old rows against new columns
+	m.table.SetRows(nil) // prevent bubbles/table looping old rows against new columns
 	m.table.SetColumns(cols)
 	m.populateTableRows()
 }
