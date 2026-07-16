@@ -1,13 +1,13 @@
 # Dossier — Technical Specification (v1)
 
-> Codename: chainlink · Scope: objective-critical core · Local, single-user
+> Codename: chainlink · Scope: objective-critical core · Local, single-user [Amended to local-first, optionally team-synced (B12/ADR 0005, 2026-07-15)]
 > Date: 2026-06-14 · Sources: `PRD.md`, `PRFAQ.md`
 
 ---
 
 ## 1. Purpose
 
-Build Dossier as a local, single-user memory layer for long-running agent work. A Dossier is a durable topic with a curated Markdown **Distilled State**, a source-retaining **Archive** of captured artifacts, and an append-only audit log. v1 supports Claude Code through MCP, CLI/TUI, context files, and lifecycle hooks.
+Build Dossier as a local, single-user (amended to local-first, optionally team-synced per B12) memory layer for long-running agent work. A Dossier is a durable topic with a curated Markdown **Distilled State**, a source-retaining **Archive** of captured artifacts, and an append-only audit log. v1 supports Claude Code through MCP, CLI/TUI, context files, and lifecycle hooks.
 
 The product must optimize for agent-initiated use: when a supported agent session starts, the agent should see the user's Dossier library, understand capability limitations for that harness/session, and help the user continue or create a Dossier without forcing a separate CLI workflow.
 
