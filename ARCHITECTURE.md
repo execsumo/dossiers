@@ -264,6 +264,8 @@ The Distillation Guide, the Dossier Protocol skill, and the `library.md` templat
 
 **Programmatic Injection (Zero-Tax Architecture):** Instead of injecting the 1500-token `guide.md` into global prompts (`skill.md`) or passive lifecycle hooks where it wastes tokens on generic coding tasks, Dossier uses **active interception**. When an LLM invokes the `dossier_session` MCP tool to bind a topic, the MCP server dynamically wraps the `Service.Switch` or `Service.Active` state response in a payload that explicitly includes the full string contents of the Distillation Guide. This guarantees the LLM receives strict schema instructions *exactly* when it enters a dossier context, while maintaining zero overhead during non-dossier operations. Future iterations will apply this deterministic pattern to other operational instructions currently housed in `skill.md` to further compress global bloat.
 
+The `session-start` hook is the one injection point that fires unconditionally on *every* session, whether or not it has anything to do with Dossier — so it deliberately does not follow the "inline the heavy payload" pattern above for a session with no active binding. `Service.SessionStart` (`internal/core/service.go`) reduces that case to a single-line nudge (open-dossier names + a pointer to the three MCP tools that would act on them); the Distillation Guide and a bound Dossier's full Distilled State are still inlined in full when a session *does* have an active binding, since that binding is the explicit signal that this session is about Dossier work.
+
 ---
 
 ## 10. Testing strategy (how the acceptance criteria get met)

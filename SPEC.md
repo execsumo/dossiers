@@ -636,6 +636,13 @@ Behavior:
 
 ### 9.1 Session Start
 
+Session start injection fires on **every** session regardless of whether that
+session has anything to do with Dossier, so its unbound-session payload is
+deliberately a single-line nudge, not a full listing — the heavy payload
+(Distillation Guide, full Distilled State) is delivered by the MCP tool
+calls themselves (`dossier_session`'s response), the moment an agent
+actually enters a Dossier's context, not passively on every session start.
+
 When supported, session start injection includes:
 
 ```markdown
@@ -643,16 +650,12 @@ When supported, session start injection includes:
 
 Warning: Transcript archive is unavailable in this session.
 
-The following dossiers are available to resume work on:
-...
-
-Distillation Guide:
-See: ~/.dossier/context/guide.md
+3 open dossier(s): Alpha, Beta, Gamma. Use dossier_list for details, dossier_session to resume one, or dossier_promote for a new thread (it flags likely duplicates automatically). Guide: ~/.dossier/context/guide.md
 ```
 
-If a session has an active binding, also inject the active Dossier's Distilled State.
+If a session has an active binding, also inject the Distillation Guide and the active Dossier's Distilled State in full.
 
-If no active binding exists, instruct the agent to ask whether the user wants to continue an existing Dossier or proceed without one.
+If no active binding exists, the one-line nudge above is the entire payload — no further instructions block. `dossier_promote`'s own similarity check (returned as `next_actions` on ambiguous matches) is what actually guides the agent's decision, not prose injected up front.
 
 ### 9.2 Session End And Pre-Compaction
 

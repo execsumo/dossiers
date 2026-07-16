@@ -455,6 +455,50 @@ func warningsText(warnings []Warning) string {
 	return strings.Join(parts, "\n")
 }
 
+// TestSessionStartUnboundIsCompactNudge guards the dogfooding fix where an
+// unbound session's injected context was a full open-dossier bulletlist plus
+// a 3-step instructional block, steering every session (including ones with
+// nothing to do with Dossier) toward thinking about it. Unbound sessions now
+// get a single-line nudge; the heavy payload (guide, full Distilled State)
+// is only delivered via dossier_session once a dossier is actually bound.
+func TestSessionStartUnboundIsCompactNudge(t *testing.T) {
+	fakeStore := newLocalFakeStore()
+	now := time.Date(2026, 6, 14, 12, 0, 0, 0, time.UTC)
+	fakeStore.dossiers["dos_a"] = &Dossier{
+		Frontmatter: Frontmatter{
+			ID:            "dos_a",
+			Name:          "Pricing model refresh",
+			Slug:          "pricing-model-refresh",
+			Status:        StatusActive,
+			Importance:    ImportanceHigh,
+			Urgency:       UrgencyLow,
+			CreatedAt:     now,
+			UpdatedAt:     now,
+			LastTouchedAt: now,
+		},
+	}
+
+	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{now: now}, Config{DossierHome: "/tmp/dossier-test"})
+
+	payload, err := svc.SessionStart(context.Background(), "sess_unbound")
+	if err != nil {
+		t.Fatalf("SessionStart failed: %v", err)
+	}
+
+	if !strings.Contains(payload, "Pricing model refresh") {
+		t.Errorf("expected open dossier name in nudge, got:\n%s", payload)
+	}
+	if strings.Contains(payload, "check the Open Dossiers list") || strings.Contains(payload, "similarity check and flag") {
+		t.Errorf("expected the old multi-step instructional block to be gone, got:\n%s", payload)
+	}
+	if strings.Contains(payload, "Active Dossier:") {
+		t.Errorf("expected no Active Dossier block for an unbound session, got:\n%s", payload)
+	}
+	if strings.Count(payload, "\n") > 4 {
+		t.Errorf("expected a compact few-line payload for an unbound session, got %d lines:\n%s", strings.Count(payload, "\n"), payload)
+	}
+}
+
 func TestServiceListSorting(t *testing.T) {
 	fakeStore := newLocalFakeStore()
 	tok := &mockTokenizer{}

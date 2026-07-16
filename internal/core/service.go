@@ -1503,13 +1503,13 @@ func (s *Service) SessionStart(ctx context.Context, sessionID string) (string, e
 		return scored[i].fm.UpdatedAt.Before(scored[j].fm.UpdatedAt)
 	})
 
-	var openLines []string
+	var names []string
 	for _, sItem := range scored {
-		openLines = append(openLines, fmt.Sprintf("- **%s** (status: %s, slug: %s, priority: %d)", sItem.fm.Name, sItem.fm.Status, sItem.fm.Slug, sItem.score))
+		names = append(names, sItem.fm.Name)
 	}
-	openStr := strings.Join(openLines, "\n")
-	if openStr == "" {
-		openStr = "(No open dossiers)"
+	namesStr := "(none)"
+	if len(names) > 0 {
+		namesStr = strings.Join(names, ", ")
 	}
 
 	// Detect capabilities
@@ -1532,28 +1532,29 @@ func (s *Service) SessionStart(ctx context.Context, sessionID string) (string, e
 		sb.WriteString("Warning: Transcript archive is unavailable in this session.\n\n")
 	}
 
-	sb.WriteString("The following dossiers are available to resume work on:\n")
-	sb.WriteString(openStr)
-	sb.WriteString("\n\n")
+	// Deliberately a single-line nudge, not a full payload: this fires on every
+	// session regardless of relevance to Dossier, so it must stay cheap for
+	// sessions that don't touch it. The heavy payload (Distillation Guide, full
+	// Distilled State) is delivered by the MCP tool calls themselves — see
+	// dossier_session's response — the moment the agent actually enters a
+	// dossier's context, not passively here.
+	sb.WriteString(fmt.Sprintf(
+		"%d open dossier(s): %s. Use dossier_list for details, dossier_session to resume one, or dossier_promote for a new thread (it flags likely duplicates automatically). Guide: ~/.dossier/context/guide.md\n",
+		len(scored), namesStr,
+	))
 
-	sb.WriteString("Distillation Guide:\n")
 	if activeDossierID != "" {
 		guidePath := filepath.Join(s.cfg.DossierHome, "context", "guide.md")
 		if guideBytes, err := os.ReadFile(guidePath); err == nil {
+			sb.WriteString("\nDistillation Guide:\n")
 			sb.WriteString(string(guideBytes))
-			sb.WriteString("\n\n")
-		} else {
-			sb.WriteString("See: ~/.dossier/context/guide.md\n\n")
+			sb.WriteString("\n")
 		}
-	} else {
-		sb.WriteString("See: ~/.dossier/context/guide.md\n\n")
-	}
 
-	if activeDossierID != "" {
 		recallRes, err := s.Recall(ctx, RecallReq{ID: activeDossierID})
 		if err == nil {
 			recData := recallRes.Data.(RecallResult)
-			sb.WriteString("Active Dossier:\n")
+			sb.WriteString("\nActive Dossier:\n")
 			sb.WriteString(fmt.Sprintf("ID: %s\n", recData.Frontmatter.ID))
 			sb.WriteString(fmt.Sprintf("Name: %s\n", recData.Frontmatter.Name))
 			sb.WriteString(fmt.Sprintf("Revision: %s\n\n", recData.Revision))
@@ -1561,12 +1562,6 @@ func (s *Service) SessionStart(ctx context.Context, sessionID string) (string, e
 			sb.WriteString(recData.DistilledState)
 			sb.WriteString("\n")
 		}
-	} else {
-		sb.WriteString("No active Dossier is bound to this session.\n\n")
-		sb.WriteString("When the user names a topic to work on, check the Open Dossiers list above before creating anything:\n")
-		sb.WriteString("1. If a close match exists, surface it: \"I see [Name] ([status], last touched N days ago) — is that the one to continue, or is this a new thread?\"\n")
-		sb.WriteString("2. If the user confirms an existing one, call dossier_session with its slug.\n")
-		sb.WriteString("3. If none match or the user says it's new, call dossier_promote — it will run a similarity check and flag any missed candidates before creating.\n")
 	}
 
 	return sb.String(), nil
