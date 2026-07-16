@@ -1116,12 +1116,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "esc", "backspace":
-			if m.currentView == ViewDetail {
+			switch m.currentView {
+			case ViewDetail:
 				m.currentView = ViewDashboard
 				m.warnings = nil
 				m.err = nil
 				m.table.Focus()
 				return m, m.listDossiersCmd()
+			case ViewDashboard:
+				// Esc from the dashboard returns to the lead selector, the
+				// screen the app always starts on.
+				m.openLeadSelector()
+				return m, nil
 			}
 		case "r":
 			m.loading = true
@@ -2042,7 +2048,7 @@ func (m Model) View() string {
 		}
 	}
 
-	keyHelp := "↑/↓: select • f: filters • s: status • l: lead • p: priority • n: next action • k: link • m: merge"
+	keyHelp := "↑/↓: select • f: filters • s: status • l: lead • p: priority • n: next action • k: link • m: merge • esc: leads"
 	switch m.currentView {
 	case ViewLeadSelector:
 		keyHelp = "type: search leads • ↑/↓: select • esc: cancel"

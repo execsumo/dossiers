@@ -796,6 +796,41 @@ func TestChooseLeadFiltersDashboard(t *testing.T) {
 	}
 }
 
+// TestEscFromDashboardReturnsToLeadSelector verifies that Esc on the dashboard
+// takes the user back to the lead selector — the screen the app starts on —
+// rather than being a no-op, and that the selector reopens scoped to the
+// filter that was active on the dashboard.
+func TestEscFromDashboardReturnsToLeadSelector(t *testing.T) {
+	store := newTestStore()
+	svc := setupTestService(store)
+	m := NewModel(svc)
+
+	m.items = []core.ListItem{
+		{ID: "1", Name: "Alpha", Lead: "Bob"},
+		{ID: "2", Name: "Beta", Lead: "Alice"},
+		{ID: "3", Name: "Gamma", Lead: "Bob"},
+	}
+	m.leadOptions = deriveLeadOptions(m.items, m.hideResolvedArchived)
+	m.leadResults = m.leadOptions
+
+	// Select "Bob" (index 3: All, Unassigned, Alice, Bob) to land on the dashboard.
+	m.leadCursor = 3
+	m.chooseLead()
+	if m.currentView != ViewDashboard {
+		t.Fatalf("expected dashboard after choosing lead, got view %d", m.currentView)
+	}
+
+	newM, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = newM.(Model)
+
+	if m.currentView != ViewLeadSelector {
+		t.Fatalf("expected esc to return to lead selector, got view %d", m.currentView)
+	}
+	if m.leadResults[m.leadCursor].filter != m.leadFilter {
+		t.Errorf("expected cursor parked on active filter %+v, got %+v", m.leadFilter, m.leadResults[m.leadCursor].filter)
+	}
+}
+
 // TestStatusTierSort guards against the regression where fetching all statuses
 // for lead filtering let a high-priority archived dossier sort above active work.
 func TestStatusTierSort(t *testing.T) {
