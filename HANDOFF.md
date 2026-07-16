@@ -50,7 +50,11 @@ All features (CLI, MCP, and Rich TUI) are fully operational, tested, and integra
 3. **Phase 3 — Onboarding + auto-sync**: `dossier team create|join`; sync piggybacks on Recall/Save/session hooks (async/debounced, never blocks); TUI/doctor/MCP surfacing. No daemon.
 4. **Phase 4 — Docs, dogfood, hardening**: README for the least technical teammate, PRD/SPEC amendments, failure drills, two-colleague pilot.
 
-**Status:** Plan docs committed (this entry, ADR 0005, B12, plan doc, CLAUDE.md premise update). **Phase 1 delegated to a herdr delegate agent (antigravity) on 2026-07-15** — check the delegate's worktree/PR state before starting Phase 1 work yourself; if the delegation died with no output, Phase 1 in the plan doc is self-contained enough to execute directly. Phases 2–4 not started.
+**Status:** Plan docs committed (this entry, ADR 0005, B12, plan doc, CLAUDE.md premise update). Two delegations in flight (2026-07-15) — check both worktrees' state before starting overlapping work yourself; if a delegation died with no output, the plan doc sections are self-contained enough to execute directly:
+- **Phase 1 → antigravity delegate**, worktree `dossiers-worktrees/agy-teamsync-p1`, branch `delegate/agy-teamsync-p1`.
+- **Phase 2 de-risk spike (go-git sync engine) → cline delegate**, worktree `dossiers-worktrees/cline-gitsync-spike`, branch `delegate/cline-gitsync-spike`. Scope-fenced to `internal/sync/**` + `go.mod`/`go.sum` + `docs/spikes/gitsync-findings.md` so it cannot collide with Phase 1's files; it prototypes pull→resolve→commit→push against local bare repos, conflict detection on `dossier.md` (remote-wins + `ConflictRecord`, no merge markers), >100 MB exclusion, and the store-wide sync lock — NOT wired into `core.Service` (that wiring is Phase 2 proper, after Phase 1 merges).
+
+Phase 2 wiring and Phases 3–4 not started.
 
 **Resume here if interrupted:** read `docs/team-sync-plan.md`, then check `git log team-sync` and open PRs to see which phase landed last. The plan's "Non-negotiables" section + CLAUDE.md's new Team Sync hard rule bind all phases.
 
