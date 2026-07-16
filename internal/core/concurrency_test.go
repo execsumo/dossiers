@@ -131,8 +131,6 @@ func TestOptimisticConcurrencyConflict(t *testing.T) {
 	}
 }
 
-
-
 func TestDossierMergeHappyPath(t *testing.T) {
 	fakeStore := newLocalFakeStore()
 	tok := &mockTokenizer{}

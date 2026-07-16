@@ -1025,7 +1025,7 @@ func NewRootCmd() *cobra.Command {
 			var payload struct {
 				SessionID      string `json:"session_id"`
 				HookEventName  string `json:"hook_event_name"`
-				Transcript     string `json:"transcript"`
+				TranscriptPath string `json:"transcript_path"`
 				DistilledState string `json:"distilled_state"`
 			}
 
@@ -1040,29 +1040,7 @@ func NewRootCmd() *cobra.Command {
 				sessID, _ = resolveSessionID()
 			}
 
-			transcript := payload.Transcript
-			if transcript == "" && sessID != "" {
-				home, err := os.UserHomeDir()
-				if err == nil {
-					projectsDir := filepath.Join(home, ".claude", "projects")
-					var transcriptPath string
-					_ = filepath.Walk(projectsDir, func(path string, info os.FileInfo, err error) error {
-						if err != nil {
-							return nil
-						}
-						if !info.IsDir() && info.Name() == sessID+".jsonl" {
-							transcriptPath = path
-							return fmt.Errorf("found")
-						}
-						return nil
-					})
-					if transcriptPath != "" {
-						if b, err := os.ReadFile(transcriptPath); err == nil {
-							transcript = string(b)
-						}
-					}
-				}
-			}
+			transcript := harness.ResolveTranscript(sessID, payload.TranscriptPath)
 
 			switch args[0] {
 			case "session-start":

@@ -513,18 +513,18 @@ func (s *FSStore) AppendAudit(dossierID string, e core.AuditEvent) error {
 	if err != nil {
 		return err
 	}
-	
+
 	author := e.Author
 	if author == "" {
 		author = "unknown"
 	}
 	safeAuthor := SanitizeAuthorString(author)
-	
+
 	auditDir := filepath.Join(dossierDir, "audit")
 	if err := os.MkdirAll(auditDir, 0755); err != nil {
 		return err
 	}
-	
+
 	return AppendAuditLine(filepath.Join(auditDir, safeAuthor+".log"), e)
 }
 
@@ -534,7 +534,7 @@ func (s *FSStore) ReadAuditLog(dossierID string) ([]core.AuditEvent, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var allEntries []core.AuditEvent
 
 	legacyEntries, err := ReadAuditEntries(filepath.Join(dossierDir, "audit.log"))
@@ -554,7 +554,7 @@ func (s *FSStore) ReadAuditLog(dossierID string) ([]core.AuditEvent, error) {
 			}
 		}
 	}
-	
+
 	sort.Slice(allEntries, func(i, j int) bool {
 		return allEntries[i].TS.Before(allEntries[j].TS)
 	})
@@ -577,7 +577,7 @@ func (s *FSStore) ValidateAuditShards(dossierID string) []string {
 		}
 		return []string{fmt.Sprintf("could not read audit dir for %s", dossierID)}
 	}
-	
+
 	for _, f := range files {
 		if !f.IsDir() && strings.HasSuffix(f.Name(), ".log") {
 			name := strings.TrimSuffix(f.Name(), ".log")
@@ -615,7 +615,7 @@ func (s *FSStore) WriteSessionStash(dossierID string, author string, sessionID s
 		return err
 	}
 	filePath := filepath.Join(stashDir, fmt.Sprintf("%s.md", sessionID))
-	
+
 	// overwrite-or-append per session id is fine. We will overwrite.
 	return os.WriteFile(filePath, []byte(content), 0644)
 }

@@ -356,14 +356,14 @@ func TestFSStoreAuditLogShardsAndLegacy(t *testing.T) {
 	now := time.Now().Truncate(time.Second)
 	dossier := &core.Dossier{
 		Frontmatter: core.Frontmatter{
-			ID:     "dos_audit_shards",
-			Name:   "Audit Shards",
-			Slug:   "audit-shards",
-			Status: core.StatusActive,
-			Importance: core.ImportanceLow,
-			Urgency: core.UrgencyLow,
-			CreatedAt: now,
-			UpdatedAt: now,
+			ID:            "dos_audit_shards",
+			Name:          "Audit Shards",
+			Slug:          "audit-shards",
+			Status:        core.StatusActive,
+			Importance:    core.ImportanceLow,
+			Urgency:       core.UrgencyLow,
+			CreatedAt:     now,
+			UpdatedAt:     now,
 			LastTouchedAt: now,
 		},
 		DistilledState: core.DistilledState{Body: "# Body"},
@@ -385,7 +385,7 @@ func TestFSStoreAuditLogShardsAndLegacy(t *testing.T) {
 	// 2. Write new shards
 	e2 := core.AuditEvent{TS: now.Add(-5 * time.Minute), Event: core.AuditEventSave, Author: "Alice"}
 	e3 := core.AuditEvent{TS: now.Add(-2 * time.Minute), Event: core.AuditEventSave, Author: "Bob"}
-	
+
 	_ = store.AppendAudit(dossier.Frontmatter.ID, e3) // Write Bob's first to test sorting
 	_ = store.AppendAudit(dossier.Frontmatter.ID, e2)
 
@@ -421,14 +421,14 @@ func TestFSStoreSessionStash(t *testing.T) {
 	now := time.Now().Truncate(time.Second)
 	dossier := &core.Dossier{
 		Frontmatter: core.Frontmatter{
-			ID:     "dos_stash",
-			Name:   "Stash",
-			Slug:   "dos-stash",
-			Status: core.StatusActive,
-			Importance: core.ImportanceLow,
-			Urgency: core.UrgencyLow,
-			CreatedAt: now,
-			UpdatedAt: now,
+			ID:            "dos_stash",
+			Name:          "Stash",
+			Slug:          "dos-stash",
+			Status:        core.StatusActive,
+			Importance:    core.ImportanceLow,
+			Urgency:       core.UrgencyLow,
+			CreatedAt:     now,
+			UpdatedAt:     now,
 			LastTouchedAt: now,
 		},
 		DistilledState: core.DistilledState{Body: "# Body"},
@@ -454,13 +454,22 @@ func TestFSStoreSessionStash(t *testing.T) {
 }
 
 type dummySearcher struct{}
-func (dummySearcher) Search(ctx context.Context, q string, scope core.SearchScope) ([]core.Hit, error) { return nil, nil }
+
+func (dummySearcher) Search(ctx context.Context, q string, scope core.SearchScope) ([]core.Hit, error) {
+	return nil, nil
+}
+
 type dummyTok struct{}
+
 func (dummyTok) Estimate(t string) int { return len(t) }
+
 type dummyHreg struct{}
-func (dummyHreg) All() []core.Harness { return nil }
+
+func (dummyHreg) All() []core.Harness                   { return nil }
 func (dummyHreg) Get(name string) (core.Harness, error) { return nil, nil }
+
 type dummyClock struct{ now time.Time }
+
 func (d dummyClock) Now() time.Time { return d.now }
 
 func TestTwoAuthorSimulation(t *testing.T) {
@@ -476,14 +485,14 @@ func TestTwoAuthorSimulation(t *testing.T) {
 	now := time.Now().Truncate(time.Second)
 	dossier := &core.Dossier{
 		Frontmatter: core.Frontmatter{
-			ID:     "dos_sim",
-			Name:   "Sim",
-			Slug:   "dos-sim",
-			Status: core.StatusActive,
-			Importance: core.ImportanceLow,
-			Urgency: core.UrgencyLow,
-			CreatedAt: now,
-			UpdatedAt: now,
+			ID:            "dos_sim",
+			Name:          "Sim",
+			Slug:          "dos-sim",
+			Status:        core.StatusActive,
+			Importance:    core.ImportanceLow,
+			Urgency:       core.UrgencyLow,
+			CreatedAt:     now,
+			UpdatedAt:     now,
 			LastTouchedAt: now,
 		},
 		DistilledState: core.DistilledState{Body: "# Start"},
@@ -492,20 +501,20 @@ func TestTwoAuthorSimulation(t *testing.T) {
 
 	cfgAlice := core.Config{DossierHome: tempHome, Author: "Alice"}
 	svcAlice := core.NewService(fs, dummySearcher{}, dummyTok{}, dummyHreg{}, dummyClock{now}, cfgAlice)
-	
+
 	cfgBob := core.Config{DossierHome: tempHome, Author: "Bob"}
 	svcBob := core.NewService(fs, dummySearcher{}, dummyTok{}, dummyHreg{}, dummyClock{now}, cfgBob)
 
 	_ = fs.SaveSessionBinding(&core.SessionBinding{
 		SessionBindingID: "sess-alice",
-		DossierID: "dos_sim",
-		Harness: "test",
+		DossierID:        "dos_sim",
+		Harness:          "test",
 		LastSeenRevision: "rev_fake_1",
 	})
 	_ = fs.SaveSessionBinding(&core.SessionBinding{
 		SessionBindingID: "sess-bob",
-		DossierID: "dos_sim",
-		Harness: "test",
+		DossierID:        "dos_sim",
+		Harness:          "test",
 		LastSeenRevision: "rev_fake_2",
 	})
 

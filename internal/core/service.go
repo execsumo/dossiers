@@ -1624,7 +1624,16 @@ func (s *Service) SessionEnd(ctx context.Context, sessionID string, distilledSta
 	}
 
 	if transcript != "" {
-		_ = s.store.WriteSessionStash(binding.DossierID, s.cfg.Author, sessionID, transcript)
+		if stashErr := s.store.WriteSessionStash(binding.DossierID, s.cfg.Author, sessionID, transcript); stashErr != nil {
+			_ = s.store.AppendAudit(binding.DossierID, AuditEvent{
+				TS:        now,
+				Event:     AuditEventSave,
+				Author:    s.cfg.Author,
+				DossierID: binding.DossierID,
+				SessionID: sessionID,
+				Message:   fmt.Sprintf("Warning: failed to write session stash: %v", stashErr),
+			})
+		}
 
 		art := Artifact{
 			DossierID:     binding.DossierID,
