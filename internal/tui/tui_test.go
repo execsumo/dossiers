@@ -910,9 +910,9 @@ func TestArchivedHiddenByDefault(t *testing.T) {
 		t.Fatalf("expected rendered dashboard to contain the collapsed toggle row 'Show More...', got:\n%s", got)
 	}
 
-	// The trailing extras row sits right after the visible items; select it and
-	// press enter to expand.
-	m.table.SetCursor(len(m.visibleItems))
+	// The toggle row sits right after the live items (row index liveCount);
+	// select it and press enter to expand.
+	m.table.SetCursor(m.liveCount)
 	newM, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = newM.(Model)
 
@@ -925,12 +925,24 @@ func TestArchivedHiddenByDefault(t *testing.T) {
 	if len(m.visibleItems) != 3 {
 		t.Fatalf("expected all 3 dossiers visible after toggling, got %+v", m.visibleItems)
 	}
-	if got := stripANSI(m.View()); !strings.Contains(got, "Hide Extras...") {
-		t.Fatalf("expected rendered dashboard to contain the expanded toggle row 'Hide Extras...', got:\n%s", got)
+
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "Hide Extras...") {
+		t.Fatalf("expected rendered dashboard to contain the expanded toggle row 'Hide Extras...', got:\n%s", view)
+	}
+	// The toggle row must sit above the extras, not below them.
+	toggleIdx := strings.Index(view, "Hide Extras...")
+	archivedIdx := strings.Index(view, "Old Project")
+	resolvedIdx := strings.Index(view, "Done Project")
+	if archivedIdx == -1 || resolvedIdx == -1 {
+		t.Fatalf("expected both extra dossiers rendered, got:\n%s", view)
+	}
+	if toggleIdx > archivedIdx || toggleIdx > resolvedIdx {
+		t.Fatalf("expected 'Hide Extras...' to render above the extra rows, got:\n%s", view)
 	}
 
 	// Toggling back collapses the extras again.
-	m.table.SetCursor(len(m.visibleItems))
+	m.table.SetCursor(m.liveCount)
 	newM, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = newM.(Model)
 	if m.extrasExpanded {
@@ -938,6 +950,60 @@ func TestArchivedHiddenByDefault(t *testing.T) {
 	}
 	if len(m.visibleItems) != 1 || m.visibleItems[0].ID != "act" {
 		t.Fatalf("expected only the active dossier visible after collapsing, got %+v", m.visibleItems)
+	}
+}
+
+// TestArchivedToggleWithNoLiveItems covers the liveCount == 0 edge case: a lead
+// scope with only resolved/archived dossiers. The toggle row must land at row
+// 0 (there are no live rows above it) and still expand/collapse cleanly.
+func TestArchivedToggleWithNoLiveItems(t *testing.T) {
+	store := newTestStore()
+	store.dossiers["arch"] = &core.Dossier{
+		Frontmatter: core.Frontmatter{
+			ID:            "arch",
+			Name:          "Old Project",
+			Slug:          "arch",
+			Status:        core.StatusArchived,
+			LastTouchedAt: testClock{}.Now(),
+		},
+	}
+	svc := setupTestService(store)
+	m := NewModel(svc)
+	m.width = 100
+	m.height = 40
+	m.recalculateTableLayout()
+
+	listMsg := m.listDossiersCmd()()
+	newM, _ := m.Update(listMsg)
+	m = newM.(Model)
+	m = enterDashboard(t, m)
+
+	if m.liveCount != 0 {
+		t.Fatalf("expected liveCount 0, got %d", m.liveCount)
+	}
+	if len(m.visibleItems) != 0 {
+		t.Fatalf("expected no visible items while collapsed, got %+v", m.visibleItems)
+	}
+	if m.extrasCount != 1 {
+		t.Fatalf("expected 1 extra, got %d", m.extrasCount)
+	}
+	if got := stripANSI(m.View()); !strings.Contains(got, "Show More...") {
+		t.Fatalf("expected rendered dashboard to contain 'Show More...', got:\n%s", got)
+	}
+
+	// Toggle row is at row 0 since there are no live items above it.
+	m.table.SetCursor(0)
+	newM, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = newM.(Model)
+
+	if !m.extrasExpanded {
+		t.Fatal("expected extrasExpanded to flip to true")
+	}
+	if len(m.visibleItems) != 1 || m.visibleItems[0].ID != "arch" {
+		t.Fatalf("expected the archived dossier visible after expanding, got %+v", m.visibleItems)
+	}
+	if got := stripANSI(m.View()); !strings.Contains(got, "Hide Extras...") {
+		t.Fatalf("expected rendered dashboard to contain 'Hide Extras...', got:\n%s", got)
 	}
 }
 

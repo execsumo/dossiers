@@ -213,6 +213,7 @@ type Model struct {
 	// Data
 	items        []core.ListItem // full dossier list, source of truth
 	visibleItems []core.ListItem // items[] narrowed by leadFilter and extrasExpanded; what the table shows
+	liveCount    int             // visibleItems[:liveCount] are tier-0 (live) items; visibleItems[liveCount:] are extras, present only while expanded
 	extrasCount  int             // resolved/archived items matching leadFilter but excluded from visibleItems while collapsed
 	recallResult core.RecallResult
 
@@ -547,9 +548,9 @@ func (m Model) getTargetDossier() (targetDossier, bool) {
 	}
 
 	// Dashboard view
-	idx := m.table.Cursor()
-	if idx >= 0 && idx < len(m.visibleItems) {
-		item := m.visibleItems[idx]
+	itemIdx, isToggle := m.rowToItemIndex(m.table.Cursor())
+	if !isToggle && itemIdx >= 0 && itemIdx < len(m.visibleItems) {
+		item := m.visibleItems[itemIdx]
 		return targetDossier{
 			id:           item.ID,
 			name:         item.Name,
@@ -643,26 +644,43 @@ func filterLeadOptions(opts []leadOption, query string) []leadOption {
 // applyLeadFilter recomputes the dashboard's visible items from the full set and
 // the active lead filter. It is the single choke point that keeps the table rows
 // in sync with the filter, so cursor lookups can index visibleItems directly.
-// Resolved/archived dossiers matching the lead filter are excluded from
-// visibleItems and counted into extrasCount unless extrasExpanded is set, in
-// which case they're included (sorted below live work, per statusTier).
+// Live (tier-0) items always come first, followed by extras (resolved/archived)
+// only while extrasExpanded is set — so visibleItems[:liveCount] is always the
+// live set and visibleItems[liveCount:] is always the extras set, regardless of
+// expansion state. That invariant lets the toggle row live at a stable row
+// index (liveCount) rather than always trailing the last row.
 func (m *Model) applyLeadFilter() {
 	visible := make([]core.ListItem, 0, len(m.items))
-	extras := 0
+	var extraItems []core.ListItem
 	for _, item := range m.items {
 		if !m.leadFilter.matches(item) {
 			continue
 		}
 		if statusTier(item.Status) == 1 {
-			extras++
-			if !m.extrasExpanded {
-				continue
-			}
+			extraItems = append(extraItems, item)
+			continue
 		}
 		visible = append(visible, item)
 	}
+	m.liveCount = len(visible)
+	m.extrasCount = len(extraItems)
+	if m.extrasExpanded {
+		visible = append(visible, extraItems...)
+	}
 	m.visibleItems = visible
-	m.extrasCount = extras
+}
+
+// rowToItemIndex translates a table cursor row into an index into
+// visibleItems. When extras exist, the toggle row occupies row liveCount, so
+// rows after it are offset by one; isToggle reports whether idx landed there.
+func (m *Model) rowToItemIndex(idx int) (itemIdx int, isToggle bool) {
+	if m.extrasCount == 0 || idx < m.liveCount {
+		return idx, false
+	}
+	if idx == m.liveCount {
+		return -1, true
+	}
+	return idx - 1, false
 }
 
 // openLeadSelector enters the landing screen with a fresh search, the option list
@@ -1135,17 +1153,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.listDossiersCmd()
 		case "enter":
 			if m.currentView == ViewDashboard {
-				idx := m.table.Cursor()
-				if idx == len(m.visibleItems) && m.extrasCount > 0 {
-					// The trailing "Show More.../Hide Extras..." row.
+				itemIdx, isToggle := m.rowToItemIndex(m.table.Cursor())
+				if isToggle {
+					// The "Show More.../Hide Extras..." row, between live items and extras.
 					m.extrasExpanded = !m.extrasExpanded
 					m.applyLeadFilter()
 					m.populateTableRows()
-					m.table.SetCursor(len(m.visibleItems))
+					m.table.SetCursor(m.liveCount)
 					return m, nil
 				}
-				if idx >= 0 && idx < len(m.visibleItems) {
-					dossierID := m.visibleItems[idx].ID
+				if itemIdx >= 0 && itemIdx < len(m.visibleItems) {
+					dossierID := m.visibleItems[itemIdx].ID
 					if dossierID == "" {
 						return m, nil // prevent selection of header
 					}
@@ -1203,9 +1221,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "m":
 			if m.currentView == ViewDashboard {
-				idx := m.table.Cursor()
-				if idx >= 0 && idx < len(m.visibleItems) {
-					m.startMergeSelector(m.visibleItems[idx].ID, m.visibleItems[idx].Name)
+				itemIdx, isToggle := m.rowToItemIndex(m.table.Cursor())
+				if !isToggle && itemIdx >= 0 && itemIdx < len(m.visibleItems) {
+					m.startMergeSelector(m.visibleItems[itemIdx].ID, m.visibleItems[itemIdx].Name)
 					return m, nil
 				}
 			}
@@ -1428,92 +1446,107 @@ func (m *Model) tableColumnsConfig() (showPriority, showNextAction, showDue bool
 	return w >= 55, w >= 80, w >= 65
 }
 
+// itemTableRow builds a single dossier row for the given display columns.
+func itemTableRow(item core.ListItem, showPriority, showNextAction, showDue bool) table.Row {
+	if item.ID == "" {
+		row := table.Row{item.Name, "", ""}
+		if showPriority {
+			row = append(row, "")
+		}
+		if showNextAction {
+			row = append(row, "")
+		}
+		if showDue {
+			row = append(row, "")
+		}
+		return row
+	}
+
+	leadStr := item.Lead
+	if leadStr != "" {
+		parts := strings.Fields(leadStr)
+		if len(parts) > 1 {
+			leadStr = parts[0] + " " + string(parts[len(parts)-1][0])
+		}
+	}
+
+	statusStr := item.Status
+	var priorityStr string
+	switch item.PriorityScore {
+	case 1:
+		priorityStr = "1. Do"
+	case 2:
+		priorityStr = "2. Plan"
+	case 3:
+		priorityStr = "3. Delegate"
+	case 4:
+		priorityStr = "4. Delete"
+	default:
+		priorityStr = strconv.Itoa(item.PriorityScore)
+	}
+
+	dueStr := ""
+	if item.DueDate != "" {
+		t, err := time.Parse("2006-01-02", item.DueDate)
+		if err == nil {
+			dueStr = t.Format("01/02")
+		} else {
+			dueStr = item.DueDate
+		}
+	}
+
+	row := table.Row{
+		item.Name,
+		statusStr,
+		leadStr,
+	}
+	if showPriority {
+		row = append(row, priorityStr)
+	}
+	if showNextAction {
+		row = append(row, item.NextAction)
+	}
+	if showDue {
+		row = append(row, dueStr)
+	}
+	return row
+}
+
+// extrasToggleTableRow builds the "Show More.../Hide Extras..." row.
+func extrasToggleTableRow(expanded bool, showPriority, showNextAction, showDue bool) table.Row {
+	label := "Show More..."
+	if expanded {
+		label = "Hide Extras..."
+	}
+	row := table.Row{label, "", ""}
+	if showPriority {
+		row = append(row, "")
+	}
+	if showNextAction {
+		row = append(row, "")
+	}
+	if showDue {
+		row = append(row, "")
+	}
+	return row
+}
+
+// populateTableRows maps visibleItems into the table rows, inserting the
+// extras toggle row between the live items (visibleItems[:liveCount]) and any
+// expanded extras (visibleItems[liveCount:]) so it always reads as the
+// boundary between the two groups rather than trailing the whole list.
 func (m *Model) populateTableRows() {
 	showPriority, showNextAction, showDue := m.tableColumnsConfig()
 
-	rows := make([]table.Row, 0, len(m.visibleItems))
-	for _, item := range m.visibleItems {
-		if item.ID == "" {
-			row := table.Row{item.Name, "", ""}
-			if showPriority {
-				row = append(row, "")
-			}
-			if showNextAction {
-				row = append(row, "")
-			}
-			if showDue {
-				row = append(row, "")
-			}
-			rows = append(rows, row)
-			continue
-		}
-
-		leadStr := item.Lead
-		if leadStr != "" {
-			parts := strings.Fields(leadStr)
-			if len(parts) > 1 {
-				leadStr = parts[0] + " " + string(parts[len(parts)-1][0])
-			}
-		}
-
-		statusStr := item.Status
-		var priorityStr string
-		switch item.PriorityScore {
-		case 1:
-			priorityStr = "1. Do"
-		case 2:
-			priorityStr = "2. Plan"
-		case 3:
-			priorityStr = "3. Delegate"
-		case 4:
-			priorityStr = "4. Delete"
-		default:
-			priorityStr = strconv.Itoa(item.PriorityScore)
-		}
-
-		dueStr := ""
-		if item.DueDate != "" {
-			t, err := time.Parse("2006-01-02", item.DueDate)
-			if err == nil {
-				dueStr = t.Format("01/02")
-			} else {
-				dueStr = item.DueDate
-			}
-		}
-
-		row := table.Row{
-			item.Name,
-			statusStr,
-			leadStr,
-		}
-		if showPriority {
-			row = append(row, priorityStr)
-		}
-		if showNextAction {
-			row = append(row, item.NextAction)
-		}
-		if showDue {
-			row = append(row, dueStr)
-		}
-		rows = append(rows, row)
+	rows := make([]table.Row, 0, len(m.visibleItems)+1)
+	for _, item := range m.visibleItems[:m.liveCount] {
+		rows = append(rows, itemTableRow(item, showPriority, showNextAction, showDue))
 	}
-
 	if m.extrasCount > 0 {
-		label := "Show More..."
-		if m.extrasExpanded {
-			label = "Hide Extras..."
-		}
-		row := table.Row{label, "", ""}
-		if showPriority {
-			row = append(row, "")
-		}
-		if showNextAction {
-			row = append(row, "")
-		}
-		if showDue {
-			row = append(row, "")
-		}
-		rows = append(rows, row)
+		rows = append(rows, extrasToggleTableRow(m.extrasExpanded, showPriority, showNextAction, showDue))
+	}
+	for _, item := range m.visibleItems[m.liveCount:] {
+		rows = append(rows, itemTableRow(item, showPriority, showNextAction, showDue))
 	}
 
 	m.table.SetRows(rows)
