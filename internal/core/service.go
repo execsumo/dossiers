@@ -17,6 +17,7 @@ import (
 type Config struct {
 	DossierHome string
 	TokenTarget int
+	Author      string
 }
 
 // Service orchestrates Dossier domain use-cases over the port interfaces.
@@ -209,6 +210,10 @@ func (s *Service) Doctor(ctx context.Context) (Result, error) {
 			addIssue("%s", issue)
 		}
 
+		for _, issue := range s.store.ValidateAuditShards(fm.ID) {
+			addIssue("%s", issue)
+		}
+
 		if _, err := s.store.ReadAuditLog(fm.ID); err != nil {
 			addIssue("Dossier %s audit log is not readable: %v", fm.ID, err)
 		} else {
@@ -237,7 +242,7 @@ func (s *Service) Doctor(ctx context.Context) (Result, error) {
 // Bump it whenever Frontmatter.Normalize gains a rule that should be applied
 // eagerly to existing stores; the startup sweep runs once when the store's
 // recorded version is older than this.
-const CurrentSchemaVersion = 1
+const CurrentSchemaVersion = 2
 
 // MigrateReport summarizes a one-time frontmatter migration sweep.
 type MigrateReport struct {
@@ -266,6 +271,10 @@ func (s *Service) Migrate(ctx context.Context) (Result, error) {
 
 	for _, fm := range fms {
 		report.DossiersScanned++
+
+		if err := s.store.EnsureAuditDir(fm.ID); err != nil {
+			warnings = append(warnings, Warning(fmt.Sprintf("Dossier %s: failed to create audit/ dir: %v", fm.ID, err)))
+		}
 
 		d, rev, err := s.store.Read(fm.ID)
 		if err != nil {
@@ -455,6 +464,7 @@ func (s *Service) Promote(ctx context.Context, req PromoteReq) (Result, error) {
 		_ = s.store.AppendAudit(newID, AuditEvent{
 			TS:             now,
 			Event:          AuditEventSave,
+			Author:         s.cfg.Author,
 			DossierID:      newID,
 			BeforeRevision: string(newRevision),
 			AfterRevision:  string(newRevision),
@@ -761,6 +771,7 @@ func (s *Service) Save(ctx context.Context, req SaveReq) (Result, error) {
 					_ = s.store.AppendAudit(d.Frontmatter.ID, AuditEvent{
 						TS:             s.clock.Now(),
 						Event:          AuditEventConflictCreated,
+						Author:         s.cfg.Author,
 						DossierID:      d.Frontmatter.ID,
 						SessionID:      sessID,
 						BeforeRevision: string(req.BaseRevision),
@@ -831,6 +842,7 @@ func (s *Service) Save(ctx context.Context, req SaveReq) (Result, error) {
 	event := AuditEvent{
 		TS:             s.clock.Now(),
 		DossierID:      d.Frontmatter.ID,
+		Author:         s.cfg.Author,
 		BeforeRevision: string(baseRev),
 		AfterRevision:  string(newRev),
 		ArtifactsAdded: addedArtifactIDs,
@@ -936,6 +948,7 @@ func (s *Service) Link(ctx context.Context, req LinkReq) (Result, error) {
 	_ = s.store.AppendAudit(d.Frontmatter.ID, AuditEvent{
 		TS:             now,
 		Event:          AuditEventSave,
+		Author:         s.cfg.Author,
 		DossierID:      d.Frontmatter.ID,
 		BeforeRevision: string(baseRev),
 		AfterRevision:  string(newRev),
@@ -1005,6 +1018,7 @@ func (s *Service) Merge(ctx context.Context, req MergeReq) (Result, error) {
 			_ = s.store.AppendAudit(targetD.Frontmatter.ID, AuditEvent{
 				TS:             s.clock.Now(),
 				Event:          AuditEventMergeConflict,
+				Author:         s.cfg.Author,
 				DossierID:      targetD.Frontmatter.ID,
 				BeforeRevision: string(targetRev),
 				AfterRevision:  string(targetRev),
@@ -1021,6 +1035,7 @@ func (s *Service) Merge(ctx context.Context, req MergeReq) (Result, error) {
 	_ = s.store.AppendAudit(targetD.Frontmatter.ID, AuditEvent{
 		TS:        s.clock.Now(),
 		Event:     AuditEventMergeStarted,
+		Author:    s.cfg.Author,
 		DossierID: targetD.Frontmatter.ID,
 		Message:   fmt.Sprintf("Starting merge of source %s into target %s", req.SourceID, req.TargetID),
 	})
@@ -1066,6 +1081,7 @@ func (s *Service) Merge(ctx context.Context, req MergeReq) (Result, error) {
 	_ = s.store.AppendAudit(targetD.Frontmatter.ID, AuditEvent{
 		TS:             s.clock.Now(),
 		Event:          AuditEventMergeCompleted,
+		Author:         s.cfg.Author,
 		DossierID:      targetD.Frontmatter.ID,
 		BeforeRevision: string(targetRev),
 		AfterRevision:  string(newTargetRev),
@@ -1428,6 +1444,7 @@ func (s *Service) Archive(ctx context.Context, req ArchiveReq) (Result, error) {
 	_ = s.store.AppendAudit(d.Frontmatter.ID, AuditEvent{
 		TS:             s.clock.Now(),
 		Event:          AuditEventArchived,
+		Author:         s.cfg.Author,
 		DossierID:      d.Frontmatter.ID,
 		BeforeRevision: string(rev),
 		AfterRevision:  string(newRev),
@@ -1607,6 +1624,17 @@ func (s *Service) SessionEnd(ctx context.Context, sessionID string, distilledSta
 	}
 
 	if transcript != "" {
+		if stashErr := s.store.WriteSessionStash(binding.DossierID, s.cfg.Author, sessionID, transcript); stashErr != nil {
+			_ = s.store.AppendAudit(binding.DossierID, AuditEvent{
+				TS:        now,
+				Event:     AuditEventSave,
+				Author:    s.cfg.Author,
+				DossierID: binding.DossierID,
+				SessionID: sessionID,
+				Message:   fmt.Sprintf("Warning: failed to write session stash: %v", stashErr),
+			})
+		}
+
 		art := Artifact{
 			DossierID:     binding.DossierID,
 			Type:          ArtifactTypeTranscript,
@@ -1627,6 +1655,7 @@ func (s *Service) SessionEnd(ctx context.Context, sessionID string, distilledSta
 		_ = s.store.AppendAudit(binding.DossierID, AuditEvent{
 			TS:             now,
 			Event:          AuditEventSave,
+			Author:         s.cfg.Author,
 			DossierID:      binding.DossierID,
 			SessionID:      sessionID,
 			BeforeRevision: string(finalRevision),
@@ -1638,6 +1667,7 @@ func (s *Service) SessionEnd(ctx context.Context, sessionID string, distilledSta
 		_ = s.store.AppendAudit(binding.DossierID, AuditEvent{
 			TS:        now,
 			Event:     AuditEventTranscriptCaptureUnavailable,
+			Author:    s.cfg.Author,
 			DossierID: binding.DossierID,
 			SessionID: sessionID,
 			Message:   "Session boundary reached without transcript payload; no transcript artifact was captured.",
@@ -1648,6 +1678,7 @@ func (s *Service) SessionEnd(ctx context.Context, sessionID string, distilledSta
 		_ = s.store.AppendAudit(binding.DossierID, AuditEvent{
 			TS:        now,
 			Event:     AuditEventSave,
+			Author:    s.cfg.Author,
 			DossierID: binding.DossierID,
 			SessionID: sessionID,
 			Message:   "Session boundary reached without distilled_state payload; retained available artifacts and left Distilled State unchanged.",

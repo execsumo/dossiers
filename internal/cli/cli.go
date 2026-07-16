@@ -1025,7 +1025,7 @@ func NewRootCmd() *cobra.Command {
 			var payload struct {
 				SessionID      string `json:"session_id"`
 				HookEventName  string `json:"hook_event_name"`
-				Transcript     string `json:"transcript"`
+				TranscriptPath string `json:"transcript_path"`
 				DistilledState string `json:"distilled_state"`
 			}
 
@@ -1040,6 +1040,8 @@ func NewRootCmd() *cobra.Command {
 				sessID, _ = resolveSessionID()
 			}
 
+			transcript := harness.ResolveTranscript(sessID, payload.TranscriptPath)
+
 			switch args[0] {
 			case "session-start":
 				resText, err := svc.SessionStart(context.Background(), sessID)
@@ -1050,7 +1052,7 @@ func NewRootCmd() *cobra.Command {
 				fmt.Print(resText)
 
 			case "session-end", "pre-compaction":
-				err := svc.SessionEnd(context.Background(), sessID, payload.DistilledState, payload.Transcript)
+				err := svc.SessionEnd(context.Background(), sessID, payload.DistilledState, transcript)
 				if err != nil {
 					fmt.Printf("Session end hook failed: %v\n", err)
 					os.Exit(1)

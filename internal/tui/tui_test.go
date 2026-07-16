@@ -138,6 +138,18 @@ func (s *testStore) ReadAuditLog(dossierID string) ([]core.AuditEvent, error) {
 	return s.auditLogs[dossierID], nil
 }
 
+func (s *testStore) ValidateAuditShards(dossierID string) []string {
+	return nil
+}
+
+func (s *testStore) EnsureAuditDir(dossierID string) error {
+	return nil
+}
+
+func (s *testStore) WriteSessionStash(dossierID, author, sessionID, content string) error {
+	return nil
+}
+
 func (s *testStore) SaveSessionBinding(binding *core.SessionBinding) error {
 	s.bindings[binding.SessionBindingID] = binding
 	return nil

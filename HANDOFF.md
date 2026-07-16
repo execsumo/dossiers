@@ -50,9 +50,10 @@ All features (CLI, MCP, and Rich TUI) are fully operational, tested, and integra
 3. **Phase 3 — Onboarding + auto-sync**: `dossier team create|join`; sync piggybacks on Recall/Save/session hooks (async/debounced, never blocks); TUI/doctor/MCP surfacing. No daemon.
 4. **Phase 4 — Docs, dogfood, hardening**: README for the least technical teammate, PRD/SPEC amendments, failure drills, two-colleague pilot.
 
-**Status:** Plan docs committed (this entry, ADR 0005, B12, plan doc, CLAUDE.md premise update). Two delegations in flight (2026-07-15) — check both worktrees' state before starting overlapping work yourself; if a delegation died with no output, the plan doc sections are self-contained enough to execute directly:
-- **Phase 1 → antigravity delegate**, worktree `dossiers-worktrees/agy-teamsync-p1`, branch `delegate/agy-teamsync-p1`.
-- **Phase 2 de-risk spike (go-git sync engine) → cline delegate**, worktree `dossiers-worktrees/cline-gitsync-spike`, branch `delegate/cline-gitsync-spike`. Scope-fenced to `internal/sync/**` + `go.mod`/`go.sum` + `docs/spikes/gitsync-findings.md` so it cannot collide with Phase 1's files; it prototypes pull→resolve→commit→push against local bare repos, conflict detection on `dossier.md` (remote-wins + `ConflictRecord`, no merge markers), >100 MB exclusion, and the store-wide sync lock — NOT wired into `core.Service` (that wiring is Phase 2 proper, after Phase 1 merges).
+**Status:** Plan docs committed (this entry, ADR 0005, B12, plan doc, CLAUDE.md premise update). **Phase 1 (Identity & store layout v2) implemented, reviewed, and merged into `team-sync` (2026-07-15)** — delivered by an antigravity delegate, verified against the DoD (build/vet/gofmt clean, 94 tests incl. two-author isolation + legacy-audit-untouched; transcript discovery lives in `harness.ResolveTranscript`, preferring the hook payload's `transcript_path`).
+
+One delegation still in flight (2026-07-15) — check its worktree before starting overlapping work; if it died with no output, the plan doc section is self-contained enough to execute directly:
+- **Phase 2 de-risk spike (go-git sync engine) → cline delegate**, worktree `dossiers-worktrees/cline-gitsync-spike`, branch `delegate/cline-gitsync-spike`. Scope-fenced to `internal/sync/**` + `go.mod`/`go.sum` + `docs/spikes/gitsync-findings.md` so it cannot collide with Phase 1's files; it prototypes pull→resolve→commit→push against local bare repos, conflict detection on `dossier.md` (remote-wins + `ConflictRecord`, no merge markers), >100 MB exclusion, and the store-wide sync lock — NOT wired into `core.Service` (that wiring is Phase 2 proper).
 
 Phase 2 wiring and Phases 3–4 not started.
 

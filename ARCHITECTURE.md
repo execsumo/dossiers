@@ -180,7 +180,9 @@ Implements SPEC §12. The non-negotiables:
 
 **Artifacts**: generate id first → write file atomically (temp+rename) → append audit. Reject any single artifact > 1 GB (`artifact_too_large`). Validate format ∈ {markdown, json, txt}; binary → `binary_artifact_unsupported`, store metadata/path/provenance only.
 
-**`audit.log`**: `O_APPEND` single-line JSONL writes (atomic for lines < `PIPE_BUF` on POSIX), under a short-held dir lock. Read = parse line-by-line, order by `ts`.
+**Audit Log**: Sharded by sanitized author slug (`audit/<author>.log`). `O_APPEND` single-line JSONL writes (atomic for lines < `PIPE_BUF` on POSIX), under a short-held dir lock. Read = parse all shards line-by-line plus legacy `audit.log`, sort globally by `ts`.
+
+**Session Stash**: Transcripts are written to `sessions/<author>/<session-id>.md` upon session end to provide an uncompressed author-specific history independent of distillation.
 
 **IDs / slugs** (`ids.go`): ULID with prefixes `dos_ art_ sess_ rev_ conf_`. Slug per SPEC §12.2; on collision append `-` + last 6 chars of the ULID (Crockford base32).
 

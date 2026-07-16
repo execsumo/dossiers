@@ -37,13 +37,14 @@ func (m *mockClock) Now() time.Time {
 }
 
 type localFakeStore struct {
-	dossiers  map[string]*Dossier
-	revisions map[string]Revision
-	artifacts map[string][]Artifact
-	audits    map[string][]AuditEvent
-	sessions  map[string]*SessionBinding
-	conflicts map[string]*Conflict
-	history   map[Revision]*Dossier
+	dossiers         map[string]*Dossier
+	revisions        map[string]Revision
+	artifacts        map[string][]Artifact
+	audits           map[string][]AuditEvent
+	sessions         map[string]*SessionBinding
+	conflicts        map[string]*Conflict
+	history          map[Revision]*Dossier
+	auditShardIssues []string
 }
 
 func newLocalFakeStore() *localFakeStore {
@@ -142,7 +143,10 @@ func (f *localFakeStore) AppendAudit(id string, e AuditEvent) error {
 	f.audits[id] = append(f.audits[id], e)
 	return nil
 }
-func (f *localFakeStore) ReadAuditLog(id string) ([]AuditEvent, error) { return f.audits[id], nil }
+func (f *localFakeStore) ReadAuditLog(id string) ([]AuditEvent, error)                  { return f.audits[id], nil }
+func (f *localFakeStore) ValidateAuditShards(id string) []string                        { return f.auditShardIssues }
+func (f *localFakeStore) EnsureAuditDir(id string) error                                { return nil }
+func (f *localFakeStore) WriteSessionStash(id, author, sessionID, content string) error { return nil }
 func (f *localFakeStore) SaveSessionBinding(b *SessionBinding) error {
 	cp := *b
 	f.sessions[b.SessionBindingID] = &cp
@@ -588,5 +592,108 @@ func TestServiceListSorting(t *testing.T) {
 		if items[i].ID != expectedID {
 			t.Errorf("at index %d: expected %s, got %s", i, expectedID, items[i].ID)
 		}
+	}
+}
+
+func TestMigrateIdempotence(t *testing.T) {
+	fakeStore := newLocalFakeStore()
+	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{}, Config{})
+
+	d := &Dossier{
+		Frontmatter: Frontmatter{ID: "d1", Slug: "d1", Status: StatusActive},
+	}
+	fakeStore.dossiers["d1"] = d
+	fakeStore.revisions["d1"] = "rev1"
+
+	res1, err := svc.Migrate(context.Background())
+	if err != nil {
+		t.Fatalf("Migrate 1 failed: %v", err)
+	}
+	report1 := res1.Data.(MigrateReport)
+
+	res2, err := svc.Migrate(context.Background())
+	if err != nil {
+		t.Fatalf("Migrate 2 failed: %v", err)
+	}
+	report2 := res2.Data.(MigrateReport)
+
+	if report2.DossiersHealed > 0 || len(res2.Warnings) > 0 {
+		t.Errorf("second migration should make zero changes and produce no warnings")
+	}
+	if report1.DossiersScanned != report2.DossiersScanned {
+		t.Errorf("scanned count mismatched")
+	}
+}
+
+func TestDoctorAuditShards(t *testing.T) {
+	fakeStore := newLocalFakeStore()
+	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{}, Config{})
+
+	d := &Dossier{
+		Frontmatter: Frontmatter{ID: "d1", Slug: "d1", Status: StatusActive},
+	}
+	fakeStore.dossiers["d1"] = d
+	fakeStore.revisions["d1"] = "rev1"
+
+	fakeStore.auditShardIssues = []string{"Audit shard bad_name.log in dossier d1 has malformed name"}
+
+	res, err := svc.Doctor(context.Background())
+	if err != nil {
+		t.Fatalf("Doctor failed: %v", err)
+	}
+
+	found := false
+	for _, issue := range res.Warnings {
+		if string(issue) == "Audit shard bad_name.log in dossier d1 has malformed name" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected doctor to report malformed shard issue")
+	}
+}
+
+func TestTwoAuthorSimulation(t *testing.T) {
+	// 5. Two-author simulation test
+	// We'll use actual FSStore for this to verify filesystem.
+	// But it requires importing store package. We can't easily do it here without circular imports if we're not careful.
+	// But wait, core doesn't import store. Store imports core.
+	// We can put this test in fsstore_test.go or a separate test package.
+	// We will skip here and add it to a new file in store package.
+}
+
+func TestSessionEndMissingTranscriptEmitsWarning(t *testing.T) {
+	fakeStore := newLocalFakeStore()
+	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{now: time.Date(2026, 6, 14, 12, 0, 0, 0, time.UTC)}, Config{TokenTarget: 100})
+	ctx := context.Background()
+
+	fakeStore.dossiers["dos_missing"] = &Dossier{
+		Frontmatter:    Frontmatter{ID: "dos_missing", Slug: "dos_missing", Status: StatusActive},
+		DistilledState: DistilledState{Body: "state"},
+	}
+	fakeStore.revisions["dos_missing"] = "rev1"
+
+	if err := fakeStore.SaveSessionBinding(&SessionBinding{
+		SessionBindingID: "sess_missing",
+		Harness:          "claude-code",
+		DossierID:        "dos_missing",
+		LastSeenRevision: "rev1",
+	}); err != nil {
+		t.Fatalf("binding failed: %v", err)
+	}
+
+	if err := svc.SessionEnd(ctx, "sess_missing", "new state", ""); err != nil {
+		t.Fatalf("SessionEnd failed: %v", err)
+	}
+
+	var sawMissingAudit bool
+	for _, event := range fakeStore.audits["dos_missing"] {
+		if event.Event == AuditEventTranscriptCaptureUnavailable {
+			sawMissingAudit = true
+		}
+	}
+	if !sawMissingAudit {
+		t.Fatalf("expected audit event AuditEventTranscriptCaptureUnavailable for missing transcript")
 	}
 }

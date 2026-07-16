@@ -79,6 +79,11 @@ Store layout:
       <artifact-id>.txt
     conflicts/
       <conflict-id>.md
+    audit/
+      <author>.log
+    sessions/
+      <author>/
+        <session-id>.md
     audit.log
 ```
 
@@ -236,7 +241,7 @@ Rules:
 Example:
 
 ```json
-{"ts":"2026-06-14T16:10:00-07:00","event":"save","dossier_id":"dos_...","actor":"agent:claude-code","session_id":"sess_...","before_revision":"rev_a","after_revision":"rev_b","artifacts_added":["art_..."],"token_estimate":8420}
+{"ts":"2026-06-14T16:10:00-07:00","event":"save","dossier_id":"dos_...","actor":"agent:claude-code","author":"alice","session_id":"sess_...","before_revision":"rev_a","after_revision":"rev_b","artifacts_added":["art_..."],"token_estimate":8420}
 ```
 
 Required event types:
