@@ -236,7 +236,7 @@ Rules:
 
 ### 4.4 Audit Log
 
-`audit.log` is append-only JSON Lines.
+Audit events are written to per-author shards in `audit/<author>.log` as append-only JSON Lines (the legacy `audit.log` remains readable but is never rewritten).
 
 Example:
 
@@ -263,7 +263,7 @@ Required event types:
 - `transcript_capture_unavailable`
 - `install_warning`
 
-Audit writes must be append-only and last-write-wins is acceptable for audit entries.
+Audit writes to per-author shards must be append-only; because they are single-writer, they do not conflict across machines.
 
 ---
 
@@ -355,6 +355,9 @@ dossier link [<slug-or-id>] [--from-file <path>] [--json]
 dossier merge <source> <target> [--json]
 dossier recall <slug-or-id> [--json]
 dossier search <query> [--dossier <slug-or-id>] [--json]
+dossier sync [--status] [--json]
+dossier team create <url> [--json]
+dossier team join <url> [--json]
 dossier status <slug-or-id> <active|waiting|blocked|resolved|archived>
 dossier lead <slug-or-id> "<lead-name>"
 dossier next <slug-or-id> "<next action>"
@@ -422,6 +425,29 @@ dossier doctor
 - Sets status to `archived`.
 - Hides Dossier from default open-work view.
 - Does not delete files.
+
+`dossier sync` (Team Sync — implementation phased per docs/team-sync-plan.md)
+
+- Pulls, resolves, commits, and pushes to the configured team remote.
+- With `--status`: reports unpushed commits, diverged remote, or stale credentials without modifying state.
+- Supports `--json` output for MCP/TUI wrappers.
+- Failure modes degrade visibly: network offline, expired/invalid auth, and oversized artifacts (>100 MB) return explicit surfaced warnings, never silent failures.
+
+`dossier team create <url>` (Team Sync — implementation phased per docs/team-sync-plan.md)
+
+- Initializes and pushes the existing store to an empty private repo.
+- Validates the target repo is empty.
+- Writes `team.remote` to config.
+- Supports `--json`.
+
+`dossier team join <url>` (Team Sync — implementation phased per docs/team-sync-plan.md)
+
+- Clones the team repo into `DOSSIER_HOME`.
+- Refuses to clobber a non-empty unsynced store (requires merge-adopt flow with confirmation).
+- Confirms `author` identity.
+- Prompts for and stores a GitHub PAT.
+- Runs capability detect and hook install (existing `init` path).
+- Supports `--json`.
 
 `dossier doctor`
 
@@ -909,7 +935,7 @@ Checks:
 
 ### 14.1 Core Storage
 
-- Creating a Dossier writes `dossier.md`, `artifacts/`, and `audit.log`.
+- Creating a Dossier writes `dossier.md`, `artifacts/`, and `audit/<author>.log`.
 - `dossier.md` is readable as plain Markdown.
 - Frontmatter scan over 500 Dossiers completes under 2 seconds on a typical laptop.
 - No database file is created.
@@ -967,6 +993,15 @@ Checks:
 - `dossier archive` hides Dossier from default open-work view.
 - Archived Dossier remains searchable.
 - No CLI/MCP delete command exists.
+
+### 14.10 Team Sync
+
+- Two stores converge through one remote.
+- Concurrent `dossier.md` edit yields exactly one `conflicts/*.md` (`kind: sync_concurrent_edit`) on the later syncer with no content lost anywhere.
+- Save never blocks on network (offline save succeeds, push retries later with a visible warning).
+- Machine-local files (`config.yaml`, credentials, root `sessions/`, `context/`) never appear in the remote.
+- >100 MB artifacts excluded from sync with a persistent visible warning.
+- `team join` onboarding completes with exactly two commands and one sign-in.
 
 ---
 

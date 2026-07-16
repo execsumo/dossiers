@@ -11,7 +11,7 @@
 
 *A durable memory layer for people who run many parallel threads of work through CLI coding agents.*
 
-**SAN FRANCISCO — June 14, 2026** — Today we're introducing **Dossier**, a local, single-user memory layer that lets technically-savvy business users carry a topic of work across many agent sessions. v1 supports Claude Code, with visible capability notices when a session cannot provide the full hook or transcript-capture experience.
+**SAN FRANCISCO — June 14, 2026** — Today we're introducing **Dossier**, a local, single-user (amended to local-first, optionally team-synced per B12) memory layer that lets technically-savvy business users carry a topic of work across many agent sessions. v1 supports Claude Code, with visible capability notices when a session cannot provide the full hook or transcript-capture experience.
 
 People who drive their work through coding agents hit the same wall: a serious topic doesn't finish in one session. They come back days later and the context is gone, scattered across `/resume` histories that mix throwaway chats with work that matters. Resumed sessions are bloated with false starts and small talk. And the moment they want to switch from one agent to another, the thread breaks entirely. The `handoff.md` pattern proved people *want* a durable, portable context file — but maintaining one by hand, per topic, across 20 topics a day, doesn't scale.
 
@@ -21,7 +21,7 @@ Dossier makes a topic a first-class, durable object. You promote any session int
 
 Dossier is built around three deliberate choices. **One:** the distilled critical information and the captured source archive are kept separate, so context stays focused and citable at the same time — every material claim links back to the source that justifies it. **Two:** the agent decides what's worth keeping and writes the update itself — no review step to slow you down — and because captured raw material is never deleted, any call it makes stays recoverable from the Archive. **Three:** it meets the agent where it already lives, through MCP, hooks where available, and a plain context file fallback, so unsupported capabilities degrade visibly instead of silently.
 
-v1 is local and single-user, available as a CLI/TUI and as an MCP server that Claude Code uses through its hooks and MCP extension points. Support for other harnesses (Codex, Antigravity), sharing with colleagues, a web app, an in-app chat model, native binary attachment management, and automatic Slack/email/Drive ingestion are on the roadmap and intentionally out of v1.
+v1 is local and single-user (amended to local-first, optionally team-synced per B12), available as a CLI/TUI and as an MCP server that Claude Code uses through its hooks and MCP extension points. Support for other harnesses (Codex, Antigravity), sharing with colleagues, a web app, an in-app chat model, native binary attachment management, and automatic Slack/email/Drive ingestion are on the roadmap and intentionally out of v1.
 
 To get started, run `dossier init`. After that, when you open a supported agent session, the agent sees your Dossier library, tells you any capability limitations, and can help you continue an existing Dossier or promote the current conversation into a new one. CLI commands remain available when you want direct control.
 
@@ -63,7 +63,7 @@ Each material claim in the Distilled State links to the artifact that justifies 
 You merge them. Dossier asks which Dossier should survive as the target, produces one converged Distilled State, and surfaces any conflicts for you to resolve, rather than guessing.
 
 **Where does my data live, and what format?**
-On your machine. Each Dossier has a directory with a plain Markdown distilled-state file, a YAML frontmatter header for status and next action, text-first artifacts, and an audit log. No database. You can open, read, and search the Markdown in any reader (e.g. Obsidian) without Dossier running. v1 is local and single-user; nothing is shared or sent anywhere unless you later opt into roadmap features.
+On your machine. Each Dossier has a directory with a plain Markdown distilled-state file, a YAML frontmatter header for status and next action, text-first artifacts, and an audit log. No database. You can open, read, and search the Markdown in any reader (e.g. Obsidian) without Dossier running. v1 is local and single-user (amended to optionally team-synced per B12); nothing is shared or sent anywhere unless you later opt into roadmap features or use team sync.
 
 **Does Dossier pull in my Slack threads, emails, and docs automatically?**
 No. Dossier *stores* the material you or your agent bring to it — it doesn't fetch from external sources itself. Your agent already has its integrations; when it pulls in a Slack thread or doc, Dossier saves that as a citable snapshot. Sourcing is the agent's job; retaining and organizing it is Dossier's.
@@ -74,8 +74,11 @@ When Claude Code exposes a transcript, yes: Dossier captures it deterministicall
 **Can two sessions work on different Dossiers at the same time?**
 Yes. The active Dossier is per agent session, not global. Two sessions can work on two different Dossiers, even in the same harness. You can switch a session's active Dossier with `/dossier`, by asking the agent naturally, by starting a new session, or after `/clear`. Clearing a session removes the Dossier from that session's context; it does not delete the Dossier.
 
+**Can my team use a shared Dossier?**
+Yes (per ADR 0005, 2026-07-15 amendment). Dossier uses a private GitHub repo hidden behind the binary for team sync. You join with `dossier team join <url>`. Colleagues never see git; conflicts surface as conflict artifacts, so nothing is ever lost. Shared drives as live stores are unsupported because their sync clients resolve concurrent writes with last-write-wins, which bypasses Dossier's revision checks and violates our non-destructive guarantees.
+
 **Can I share a Dossier with a colleague?**
-Not in v1. Sharing, a web app, an in-app chat model, and automatic Slack/email/Drive ingestion are deferred.
+Not in the original v1 premise. Sharing, a web app, an in-app chat model, and automatic Slack/email/Drive ingestion were deferred, but team sync via an embedded git remote was added as a B12/ADR 0005 amendment (see the "Can my team use a shared Dossier?" question).
 
 **Can I delete a Dossier?**
 Not through Dossier in v1. You can ask the agent to archive it, which hides it from the default open-work view while keeping it searchable. If you truly want deletion, you delete the Dossier folder directly.
@@ -100,7 +103,7 @@ MCP is the cleanest "agent recalls topics from inside the harness" path and is i
 Distillation quality and the suggestion/merge engine. If distilled state is wrong or merges mangle history, users stop trusting it. Since we've removed the confirm gate (it added friction), the safety net is structural: never destroy captured source artifacts, keep an audit trail, allow optional after-the-fact edits, and surface merge conflicts explicitly. A bad distillation degrades surfacing, not retention.
 
 **What is explicitly out of scope for v1?**
-Sharing/multi-user, web app, in-app LLM wrapper, native binary attachment storage, and automated ingestion integrations (Slack/email/Drive OAuth). v1 = local single-user core: Dossier store, MCP + CLI/TUI, lifecycle/status, search, promote/link/merge.
+Web app, in-app LLM wrapper, native binary attachment storage, and automated ingestion integrations (Slack/email/Drive OAuth). Sharing/multi-user was originally out of scope but amended via B12. v1 = local single-user (amended per B12) core: Dossier store, MCP + CLI/TUI, lifecycle/status, search, promote/link/merge.
 
 **How do we know it's working?**
 The user resumes a real topic in a *different* supported agent than created it and reaches productive work without re-explaining context, with clear token-target warnings when needed — repeatedly, across days. See Success Metrics in the PRD.
