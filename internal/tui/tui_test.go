@@ -647,17 +647,17 @@ func TestDeriveLeadOptions(t *testing.T) {
 		{ID: "", Name: "placeholder"}, // header/placeholder row must be ignored
 	}
 
-	got := deriveLeadOptions(items, true)
+	got := deriveLeadOptions(items)
 
 	// All and Unassigned are pinned first; named leads follow case-insensitively
-	// sorted; the archived/resolved toggle is always last. The archived item is
-	// excluded from every count above since hideResolvedArchived is true.
+	// sorted. The archived item is excluded from every count: counts only
+	// reflect live (tier-0) work, matching the dashboard's default collapsed
+	// view — resolved/archived surfaces via the dashboard's own extras toggle.
 	want := []leadOption{
 		{filter: leadFilter{kind: filterAll}, count: 4},
 		{filter: leadFilter{kind: filterUnassigned}, count: 1},
 		{filter: leadFilter{kind: filterByName, name: "alice"}, count: 1},
 		{filter: leadFilter{kind: filterByName, name: "Bob"}, count: 2},
-		{isArchivedToggle: true, count: 1},
 	}
 
 	if len(got) != len(want) {
@@ -668,39 +668,18 @@ func TestDeriveLeadOptions(t *testing.T) {
 			t.Errorf("option %d = %+v, want %+v", i, got[i], want[i])
 		}
 	}
-
-	// With hideResolvedArchived false, the archived item counts toward Bob and All.
-	shown := deriveLeadOptions(items, false)
-	wantShown := []leadOption{
-		{filter: leadFilter{kind: filterAll}, count: 5},
-		{filter: leadFilter{kind: filterUnassigned}, count: 1},
-		{filter: leadFilter{kind: filterByName, name: "alice"}, count: 1},
-		{filter: leadFilter{kind: filterByName, name: "Bob"}, count: 3},
-		{isArchivedToggle: true, count: 1},
-	}
-	if len(shown) != len(wantShown) {
-		t.Fatalf("got %d options, want %d: %+v", len(shown), len(wantShown), shown)
-	}
-	for i := range wantShown {
-		if shown[i] != wantShown[i] {
-			t.Errorf("option %d = %+v, want %+v", i, shown[i], wantShown[i])
-		}
-	}
 }
 
 func TestDeriveLeadOptionsEmpty(t *testing.T) {
-	got := deriveLeadOptions(nil, true)
-	if len(got) != 3 {
-		t.Fatalf("expected All + Unassigned + archived toggle even with no items, got %d", len(got))
+	got := deriveLeadOptions(nil)
+	if len(got) != 2 {
+		t.Fatalf("expected All + Unassigned even with no items, got %d", len(got))
 	}
 	if got[0].filter.kind != filterAll || got[0].count != 0 {
 		t.Errorf("expected All with count 0, got %+v", got[0])
 	}
 	if got[1].filter.kind != filterUnassigned || got[1].count != 0 {
 		t.Errorf("expected Unassigned with count 0, got %+v", got[1])
-	}
-	if !got[2].isArchivedToggle || got[2].count != 0 {
-		t.Errorf("expected archived toggle with count 0, got %+v", got[2])
 	}
 }
 
@@ -776,7 +755,7 @@ func TestChooseLeadFiltersDashboard(t *testing.T) {
 		{ID: "2", Name: "Beta", Lead: "Alice"},
 		{ID: "3", Name: "Gamma", Lead: "Bob"},
 	}
-	m.leadOptions = deriveLeadOptions(m.items, m.hideResolvedArchived)
+	m.leadOptions = deriveLeadOptions(m.items)
 	m.leadResults = m.leadOptions
 
 	// Select "Bob" (index 3: All, Unassigned, Alice, Bob).
@@ -810,7 +789,7 @@ func TestEscFromDashboardReturnsToLeadSelector(t *testing.T) {
 		{ID: "2", Name: "Beta", Lead: "Alice"},
 		{ID: "3", Name: "Gamma", Lead: "Bob"},
 	}
-	m.leadOptions = deriveLeadOptions(m.items, m.hideResolvedArchived)
+	m.leadOptions = deriveLeadOptions(m.items)
 	m.leadResults = m.leadOptions
 
 	// Select "Bob" (index 3: All, Unassigned, Alice, Bob) to land on the dashboard.
@@ -876,8 +855,8 @@ func TestStatusTierSort(t *testing.T) {
 }
 
 // TestArchivedHiddenByDefault verifies resolved/archived dossiers stay out of
-// the dashboard's visible items until the user toggles them on via the filter
-// screen's archived/resolved row.
+// the dashboard's visible items until the user expands them via the trailing
+// "Show More..." row, which then flips to "Hide Extras...".
 func TestArchivedHiddenByDefault(t *testing.T) {
 	store := newTestStore()
 	store.dossiers["arch"] = &core.Dossier{
@@ -918,30 +897,47 @@ func TestArchivedHiddenByDefault(t *testing.T) {
 	m = newM.(Model)
 	m = enterDashboard(t, m)
 
-	if !m.hideResolvedArchived {
-		t.Fatal("expected hideResolvedArchived to default to true")
+	if m.extrasExpanded {
+		t.Fatal("expected extrasExpanded to default to false")
 	}
 	if len(m.visibleItems) != 1 || m.visibleItems[0].ID != "act" {
 		t.Fatalf("expected only the active dossier visible by default, got %+v", m.visibleItems)
 	}
-
-	// Open the filter screen and select the archived/resolved toggle (last row).
-	m.openLeadSelector()
-	m.leadCursor = len(m.leadResults) - 1
-	if !m.leadResults[m.leadCursor].isArchivedToggle {
-		t.Fatalf("expected last row to be the archived toggle, got %+v", m.leadResults[m.leadCursor])
+	if m.extrasCount != 2 {
+		t.Fatalf("expected 2 extras (archived + resolved), got %d", m.extrasCount)
 	}
+	if got := stripANSI(m.View()); !strings.Contains(got, "Show More...") {
+		t.Fatalf("expected rendered dashboard to contain the collapsed toggle row 'Show More...', got:\n%s", got)
+	}
+
+	// The trailing extras row sits right after the visible items; select it and
+	// press enter to expand.
+	m.table.SetCursor(len(m.visibleItems))
 	newM, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = newM.(Model)
 
 	if m.currentView != ViewDashboard {
-		t.Fatalf("expected toggle to return to ViewDashboard, got %v", m.currentView)
+		t.Fatalf("expected toggle to stay on ViewDashboard, got %v", m.currentView)
 	}
-	if m.hideResolvedArchived {
-		t.Fatal("expected hideResolvedArchived to flip to false")
+	if !m.extrasExpanded {
+		t.Fatal("expected extrasExpanded to flip to true")
 	}
 	if len(m.visibleItems) != 3 {
 		t.Fatalf("expected all 3 dossiers visible after toggling, got %+v", m.visibleItems)
+	}
+	if got := stripANSI(m.View()); !strings.Contains(got, "Hide Extras...") {
+		t.Fatalf("expected rendered dashboard to contain the expanded toggle row 'Hide Extras...', got:\n%s", got)
+	}
+
+	// Toggling back collapses the extras again.
+	m.table.SetCursor(len(m.visibleItems))
+	newM, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = newM.(Model)
+	if m.extrasExpanded {
+		t.Fatal("expected extrasExpanded to flip back to false")
+	}
+	if len(m.visibleItems) != 1 || m.visibleItems[0].ID != "act" {
+		t.Fatalf("expected only the active dossier visible after collapsing, got %+v", m.visibleItems)
 	}
 }
 

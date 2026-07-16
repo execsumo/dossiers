@@ -84,13 +84,11 @@ func (f leadFilter) label() string {
 }
 
 // leadOption is one selectable row in the lead landing screen: a filter plus the
-// number of dossiers it would show, computed once when the option list is built.
-// isArchivedToggle marks the single pinned row (always last) that flips whether
-// resolved/archived dossiers are hidden, rather than scoping by lead.
+// number of (live, tier-0) dossiers it would show, computed once when the
+// option list is built.
 type leadOption struct {
-	filter           leadFilter
-	count            int
-	isArchivedToggle bool
+	filter leadFilter
+	count  int
 }
 
 // Styling tokens
@@ -214,16 +212,21 @@ type Model struct {
 
 	// Data
 	items        []core.ListItem // full dossier list, source of truth
-	visibleItems []core.ListItem // items[] narrowed by leadFilter; what the table shows
+	visibleItems []core.ListItem // items[] narrowed by leadFilter and extrasExpanded; what the table shows
+	extrasCount  int             // resolved/archived items matching leadFilter but excluded from visibleItems while collapsed
 	recallResult core.RecallResult
 
 	// Lead landing screen state
-	leadFilter           leadFilter      // active dashboard scope (defaults to All)
-	leadSearch           textinput.Model // search-as-you-type box
-	leadOptions          []leadOption    // every selectable lead, counts included
-	leadResults          []leadOption    // leadOptions narrowed by the search box
-	leadCursor           int
-	hideResolvedArchived bool // when true (the default), resolved/archived dossiers are hidden from the dashboard
+	leadFilter  leadFilter      // active dashboard scope (defaults to All)
+	leadSearch  textinput.Model // search-as-you-type box
+	leadOptions []leadOption    // every selectable lead, counts included
+	leadResults []leadOption    // leadOptions narrowed by the search box
+	leadCursor  int
+
+	// extrasExpanded controls the dashboard's "Show More... / Hide Extras..." row:
+	// when false (the default), resolved/archived dossiers are collapsed out of
+	// visibleItems and represented by that single trailing toggle row instead.
+	extrasExpanded bool
 
 	// Viewport & Table
 	table            table.Model
@@ -350,18 +353,17 @@ func NewModel(svc *core.Service) Model {
 	}
 
 	return Model{
-		svc:                  svc,
-		currentView:          ViewLeadSelector,
-		table:                t,
-		viewport:             vp,
-		conflictViewport:     cvp,
-		loading:              true,
-		statusOptions:        statusOptions,
-		leadSearch:           leadSearch,
-		hideResolvedArchived: true,
-		watcher:              watcher,
-		updateChan:           updateChan,
-		watchedPaths:         map[string]bool{},
+		svc:              svc,
+		currentView:      ViewLeadSelector,
+		table:            t,
+		viewport:         vp,
+		conflictViewport: cvp,
+		loading:          true,
+		statusOptions:    statusOptions,
+		leadSearch:       leadSearch,
+		watcher:          watcher,
+		updateChan:       updateChan,
+		watchedPaths:     map[string]bool{},
 	}
 }
 
@@ -566,22 +568,19 @@ func (m Model) getTargetDossier() (targetDossier, bool) {
 // deriveLeadOptions builds the lead landing screen's rows from the full dossier
 // list: "All" and "Unassigned" pinned first, then each distinct lead in
 // case-insensitive alphabetical order, every row annotated with its dossier
-// count, and finally the archived/resolved visibility toggle. When
-// hideResolvedArchived is true, resolved and archived dossiers are excluded from
-// every count above the toggle so the counts match what the dashboard will
-// actually show. Pure: depends only on items and the flag.
-func deriveLeadOptions(items []core.ListItem, hideResolvedArchived bool) []leadOption {
-	var all, unassigned, hidden int
+// count. Counts reflect only live (tier-0) work, matching the dashboard's
+// default collapsed view; resolved/archived dossiers are surfaced per-lead via
+// the dashboard's own "Show More..." row, not counted here. Pure: depends only
+// on items.
+func deriveLeadOptions(items []core.ListItem) []leadOption {
+	var all, unassigned int
 	counts := make(map[string]int)
 	for _, item := range items {
 		if item.ID == "" {
 			continue // skip placeholder/header rows
 		}
 		if statusTier(item.Status) == 1 {
-			hidden++
-			if hideResolvedArchived {
-				continue
-			}
+			continue
 		}
 		all++
 		if item.Lead == "" {
@@ -610,7 +609,6 @@ func deriveLeadOptions(items []core.ListItem, hideResolvedArchived bool) []leadO
 			count:  counts[name],
 		})
 	}
-	opts = append(opts, leadOption{isArchivedToggle: true, count: hidden})
 	return opts
 }
 
@@ -635,7 +633,7 @@ func filterLeadOptions(opts []leadOption, query string) []leadOption {
 	}
 	out := make([]leadOption, 0, len(opts))
 	for _, o := range opts {
-		if o.isArchivedToggle || strings.Contains(strings.ToLower(o.filter.label()), query) {
+		if strings.Contains(strings.ToLower(o.filter.label()), query) {
 			out = append(out, o)
 		}
 	}
@@ -645,18 +643,26 @@ func filterLeadOptions(opts []leadOption, query string) []leadOption {
 // applyLeadFilter recomputes the dashboard's visible items from the full set and
 // the active lead filter. It is the single choke point that keeps the table rows
 // in sync with the filter, so cursor lookups can index visibleItems directly.
+// Resolved/archived dossiers matching the lead filter are excluded from
+// visibleItems and counted into extrasCount unless extrasExpanded is set, in
+// which case they're included (sorted below live work, per statusTier).
 func (m *Model) applyLeadFilter() {
 	visible := make([]core.ListItem, 0, len(m.items))
+	extras := 0
 	for _, item := range m.items {
 		if !m.leadFilter.matches(item) {
 			continue
 		}
-		if m.hideResolvedArchived && statusTier(item.Status) == 1 {
-			continue
+		if statusTier(item.Status) == 1 {
+			extras++
+			if !m.extrasExpanded {
+				continue
+			}
 		}
 		visible = append(visible, item)
 	}
 	m.visibleItems = visible
+	m.extrasCount = extras
 }
 
 // openLeadSelector enters the landing screen with a fresh search, the option list
@@ -670,11 +676,11 @@ func (m *Model) openLeadSelector() {
 	m.leadSearch.Focus()
 	m.leadSearch.Width = 40
 
-	m.leadOptions = deriveLeadOptions(m.items, m.hideResolvedArchived)
+	m.leadOptions = deriveLeadOptions(m.items)
 	m.leadResults = m.leadOptions
 	m.leadCursor = 0
 	for i, o := range m.leadResults {
-		if !o.isArchivedToggle && o.filter == m.leadFilter {
+		if o.filter == m.leadFilter {
 			m.leadCursor = i
 			break
 		}
@@ -926,15 +932,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "enter":
 				if len(m.leadResults) > 0 {
-					if m.leadResults[m.leadCursor].isArchivedToggle {
-						m.hideResolvedArchived = !m.hideResolvedArchived
-						m.applyLeadFilter()
-						m.populateTableRows()
-						m.currentView = ViewDashboard
-						m.table.SetCursor(0)
-						m.table.Focus()
-						return m, nil
-					}
 					m.chooseLead()
 				}
 				return m, nil
@@ -1139,6 +1136,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if m.currentView == ViewDashboard {
 				idx := m.table.Cursor()
+				if idx == len(m.visibleItems) && m.extrasCount > 0 {
+					// The trailing "Show More.../Hide Extras..." row.
+					m.extrasExpanded = !m.extrasExpanded
+					m.applyLeadFilter()
+					m.populateTableRows()
+					m.table.SetCursor(len(m.visibleItems))
+					return m, nil
+				}
 				if idx >= 0 && idx < len(m.visibleItems) {
 					dossierID := m.visibleItems[idx].ID
 					if dossierID == "" {
@@ -1253,7 +1258,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Re-derive lead options on every refresh so newly-assigned leads appear,
 		// while preserving the active filter (and the search box) across hot-reloads.
-		m.leadOptions = deriveLeadOptions(m.items, m.hideResolvedArchived)
+		m.leadOptions = deriveLeadOptions(m.items)
 		m.leadResults = filterLeadOptions(m.leadOptions, m.leadSearch.Value())
 		if m.leadCursor >= len(m.leadResults) {
 			m.leadCursor = len(m.leadResults) - 1
@@ -1492,6 +1497,25 @@ func (m *Model) populateTableRows() {
 		}
 		rows = append(rows, row)
 	}
+
+	if m.extrasCount > 0 {
+		label := "Show More..."
+		if m.extrasExpanded {
+			label = "Hide Extras..."
+		}
+		row := table.Row{label, "", ""}
+		if showPriority {
+			row = append(row, "")
+		}
+		if showNextAction {
+			row = append(row, "")
+		}
+		if showDue {
+			row = append(row, "")
+		}
+		rows = append(rows, row)
+	}
+
 	m.table.SetRows(rows)
 }
 
@@ -1686,18 +1710,6 @@ func (m Model) renderPriorityEditor() string {
 	return editorBoxStyle.Render(sb.String())
 }
 
-// leadOptionLabel is the display text for a lead-selector row: the lead's
-// filter label, or the archived/resolved toggle's current-state description.
-func (m Model) leadOptionLabel(opt leadOption) string {
-	if opt.isArchivedToggle {
-		if m.hideResolvedArchived {
-			return "Show resolved & archived"
-		}
-		return "Hide resolved & archived"
-	}
-	return opt.filter.label()
-}
-
 func (m Model) renderLeadSelector() string {
 	var sb strings.Builder
 	sb.WriteString("Filters — scope the dashboard before a meeting.\n\n")
@@ -1733,7 +1745,7 @@ func (m Model) renderLeadSelector() string {
 		if opt.count == 1 {
 			noun = "dossier"
 		}
-		line := fmt.Sprintf("%-24s %d %s", m.leadOptionLabel(opt), opt.count, noun)
+		line := fmt.Sprintf("%-24s %d %s", opt.filter.label(), opt.count, noun)
 		if i == m.leadCursor {
 			sb.WriteString(focusedItemStyle.Render(cursor + line))
 		} else {
@@ -1899,7 +1911,7 @@ func (m Model) View() string {
 
 	case ViewDashboard:
 		archivedNote := ""
-		if m.hideResolvedArchived {
+		if m.extrasCount > 0 && !m.extrasExpanded {
 			archivedNote = " · resolved/archived hidden"
 		}
 		sb.WriteString(subtitleStyle.Render(fmt.Sprintf(" Durable memory layer for agentic workflows — Dashboard · Lead: %s%s", m.leadFilter.label(), archivedNote)))
@@ -1907,7 +1919,7 @@ func (m Model) View() string {
 
 		if m.loading && len(m.items) == 0 {
 			sb.WriteString(" Loading dossiers...\n")
-		} else if len(m.visibleItems) == 0 {
+		} else if len(m.visibleItems) == 0 && m.extrasCount == 0 {
 			sb.WriteString(subtitleStyle.Render(fmt.Sprintf(" No dossiers for lead: %s — press f to change filters.\n", m.leadFilter.label())))
 		} else {
 			sb.WriteString(m.table.View())
