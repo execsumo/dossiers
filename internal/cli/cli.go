@@ -9,6 +9,7 @@ import (
 	"dossier/internal/mcp"
 	"dossier/internal/search"
 	"dossier/internal/store"
+	"dossier/internal/sync"
 	"dossier/internal/tokenizer"
 	"dossier/internal/tui"
 	"encoding/json"
@@ -1117,6 +1118,77 @@ func NewRootCmd() *cobra.Command {
 	// Match `dossier version` output for the built-in `--version` flag.
 	rootCmd.SetVersionTemplate("dossier {{.Version}}\n")
 
+	var syncStatusFlag bool
+	syncCmd := &cobra.Command{
+		Use:   "sync",
+		Short: "Synchronize the dossier store with the team remote",
+		Run: func(cmd *cobra.Command, args []string) {
+			homeDir := resolveHomeDir()
+			svc, err := wire(homeDir)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+
+			if syncStatusFlag {
+				res, err := svc.SyncStatus(context.Background())
+				if err != nil {
+					if jsonFlag {
+						printJSON(map[string]any{"ok": false, "error": err.Error()})
+						os.Exit(1)
+					}
+					fmt.Printf("Status failed: %v\n", err)
+					os.Exit(1)
+				}
+				if jsonFlag {
+					printJSON(res.Data)
+					return
+				}
+				st := res.Data.(core.SyncStatus)
+				fmt.Printf("Ahead:     %d\n", st.Ahead)
+				fmt.Printf("Behind:    %d\n", st.Behind)
+				fmt.Printf("Dirty:     %d\n", st.Dirty)
+				fmt.Printf("Conflicts: %d\n", len(st.Conflicts))
+				fmt.Printf("Last Sync: %s\n", st.LastSync.Format(time.RFC3339))
+				return
+			}
+
+			res, err := svc.Sync(context.Background())
+			if err != nil {
+				if jsonFlag {
+					printJSON(map[string]any{"ok": false, "error": err.Error()})
+					os.Exit(1)
+				}
+				fmt.Printf("Sync failed: %v\n", err)
+				os.Exit(1)
+			}
+
+			if jsonFlag {
+				printJSON(res)
+				return
+			}
+
+			for _, warning := range res.Warnings {
+				fmt.Printf("Warning: %s\n", warning)
+			}
+
+			report := res.Data.(core.SyncReport)
+			fmt.Println("Sync successful")
+			if report.Pulled {
+				fmt.Println("- Pulled remote changes")
+			}
+			if report.Pushed {
+				fmt.Println("- Pushed local changes")
+			}
+			if !report.Pulled && !report.Pushed {
+				fmt.Println("- Already up to date")
+			}
+		},
+	}
+	syncCmd.Flags().BoolVar(&syncStatusFlag, "status", false, "Show sync status without syncing")
+	syncCmd.Flags().BoolVar(&jsonFlag, "json", false, "Output results in JSON format")
+	rootCmd.AddCommand(syncCmd)
+
 	return rootCmd
 }
 
@@ -1199,7 +1271,23 @@ func wire(dossierHome string) (*core.Service, error) {
 	hregAdapter := harness.NewRegistry(dossierHome)
 	clockAdapter := &realClock{}
 
-	svc := core.NewService(storeAdapter, searchAdapter, tokAdapter, hregAdapter, clockAdapter, cfg.ToCoreConfig())
+	var syncerAdapter core.Syncer
+	if cfg.Team.Remote != "" {
+		auth, err := sync.GetAuth("")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to load credentials: %v\n", err)
+		}
+		gs := sync.New(sync.Config{
+			AuthorName: cfg.Author,
+			RemoteURL:  cfg.Team.Remote,
+			StoreDir:   dossierHome,
+			Branch:     cfg.Team.Branch,
+			Auth:       auth,
+		})
+		syncerAdapter = sync.NewAdapter(gs)
+	}
+
+	svc := core.NewService(storeAdapter, searchAdapter, tokAdapter, hregAdapter, clockAdapter, cfg.ToCoreConfig(), syncerAdapter)
 
 	// One-time, version-gated migration: when the store was last touched by an
 	// older build, eagerly heal any frontmatter the current schema no longer

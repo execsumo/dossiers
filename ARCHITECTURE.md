@@ -57,8 +57,8 @@ dossier/
       suggest.go         # lexical suggestion ranking (SPEC §11.2)
       result.go          # Result/Warning/NextAction value types (the §8.2 envelope, surface-agnostic)
       errors.go          # typed domain errors ↔ the §8.2 error codes
-      ports.go           # Store, Searcher, Tokenizer, HarnessRegistry, Clock interfaces
-      service.go         # Service: orchestrates use-cases over the ports
+      ports.go           # Store, Searcher, Tokenizer, HarnessRegistry, Clock, Syncer interfaces
+      service.go         # Service: orchestrates use-cases over the ports (incl. Sync/SyncStatus)
     store/               # driven adapter: filesystem (implements core.Store)
       fsstore.go         # layout, read/write, atomic write protocol (§5)
       auditlog.go        # append-only JSONL with O_APPEND + lock
@@ -72,7 +72,13 @@ dossier/
     harness/             # driven adapters (implement core.HarnessRegistry / Harness)
       harness.go         # Registry + shared hook-merge helpers
       claudecode.go      # the only supported harness in v1 (B2)
-    config/              # config.yaml load/save/defaults
+    sync/                # driven adapter: Team Sync go-git engine (implements core.Syncer)
+      gitsync.go         # GitSync + Config/report types; sync.go: pull→resolve→commit→push
+      merge.go/tree.go   # remote-wins 3-way merge (no git markers ever); DiffTree + MergeBase
+      credentials.go     # PAT resolution (~/.dossier/credentials 0600, `gh auth token` fallback)
+      gitignore.go       # machine-local exclusion set (config.yaml, root sessions/, context/)
+      adapter.go         # maps GitSync's internal types → core.Sync* DTOs (keeps core pure)
+    config/              # config.yaml load/save/defaults (incl. team.remote / team.branch)
     hooks/               # hook PAYLOAD builders + session-start/end handlers (call core)
     cli/                 # cobra commands → core.Service → render (text/--json)
     mcp/                 # stdio MCP server → core.Service → §8.2 envelope
@@ -154,6 +160,15 @@ type Harness interface {
 type HarnessRegistry interface{ All() []Harness }
 
 type Clock interface{ Now() time.Time }
+
+// Team Sync (Phase 2). core owns the Sync* DTOs; internal/sync maps to them so
+// core never imports the go-git adapter. Sync is local-first: the local commit
+// always lands; a nil Syncer means team sync is not configured (Service.Sync
+// returns a clear error, never panics).
+type Syncer interface {
+    Sync(ctx context.Context) (SyncReport, error)     // pull→resolve(remote-wins)→commit→push
+    Status(ctx context.Context) (SyncStatus, error)   // ahead/behind/last-sync, no mutation
+}
 ```
 
 Why each is a port:
@@ -161,6 +176,7 @@ Why each is a port:
 - **Searcher** — lets native/ripgrep swap per B5 without core knowing.
 - **Tokenizer** — B4; swappable, mockable (tests assert behavior, not exact counts).
 - **Harness** — isolates the **riskiest, most fragile code** (mutating other tools' config files) behind one interface, and makes the capability matrix a set of table tests against fixture config dirs.
+- **Syncer** — isolates the go-git networking/merge engine (B12 Team Sync) behind one interface. `Service.Sync` orchestrates: it calls the port, then routes any both-modified `dossier.md` into the **existing** `conflicts/*.md` machinery via `store.WriteConflict` (`kind: sync_concurrent_edit`) — one conflict mechanism, two triggers (local edit + cross-machine sync). Remote wins the working tree; the local version is preserved; never last-write-wins, never git merge markers.
 
 ---
 

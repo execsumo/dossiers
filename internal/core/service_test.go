@@ -193,7 +193,7 @@ func TestServiceListAndRecall(t *testing.T) {
 	clk := &mockClock{now: now}
 	cfg := Config{DossierHome: "/tmp/dossier-test", TokenTarget: 100}
 
-	svc := NewService(fakeStore, srch, tok, hreg, clk, cfg)
+	svc := NewService(fakeStore, srch, tok, hreg, clk, cfg, nil)
 
 	ctx := context.Background()
 	saveReq := SaveReq{
@@ -258,7 +258,7 @@ func TestServiceListAndRecall(t *testing.T) {
 
 func TestSaveReturnsRevisionIncludingArtifacts(t *testing.T) {
 	fakeStore := newLocalFakeStore()
-	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{now: time.Date(2026, 6, 14, 12, 0, 0, 0, time.UTC)}, Config{TokenTarget: 100})
+	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{now: time.Date(2026, 6, 14, 12, 0, 0, 0, time.UTC)}, Config{TokenTarget: 100}, nil)
 	ctx := context.Background()
 
 	createRes, err := svc.Save(ctx, SaveReq{
@@ -301,7 +301,7 @@ func TestSaveReturnsRevisionIncludingArtifacts(t *testing.T) {
 
 func TestSessionEndCapturesTranscriptWithoutDistilledState(t *testing.T) {
 	fakeStore := newLocalFakeStore()
-	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{now: time.Date(2026, 6, 14, 12, 0, 0, 0, time.UTC)}, Config{TokenTarget: 100})
+	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{now: time.Date(2026, 6, 14, 12, 0, 0, 0, time.UTC)}, Config{TokenTarget: 100}, nil)
 	ctx := context.Background()
 
 	createRes, err := svc.Save(ctx, SaveReq{
@@ -391,7 +391,7 @@ func TestDoctorReportsProvenanceAndConflictIssues(t *testing.T) {
 	}}
 	fakeStore.conflicts["conf_bad"] = &Conflict{ID: "conf_bad", DossierID: "dos_bad", Kind: "merge_conflict", TS: now}
 
-	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{now: now}, Config{})
+	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{now: now}, Config{}, nil)
 	res, err := svc.Doctor(context.Background())
 	if err != nil {
 		t.Fatalf("Doctor failed: %v", err)
@@ -437,7 +437,7 @@ func TestDoctorHealthyWithValidProvenance(t *testing.T) {
 	}}
 	fakeStore.revisions["dos_good"] = CalculateRevision(fakeStore.dossiers["dos_good"].Frontmatter, fakeStore.dossiers["dos_good"].DistilledState.Body, fakeStore.artifacts["dos_good"])
 
-	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{now: now}, Config{})
+	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{now: now}, Config{}, nil)
 	res, err := svc.Doctor(context.Background())
 	if err != nil {
 		t.Fatalf("Doctor failed: %v", err)
@@ -482,7 +482,7 @@ func TestSessionStartUnboundIsCompactNudge(t *testing.T) {
 		},
 	}
 
-	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{now: now}, Config{DossierHome: "/tmp/dossier-test"})
+	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{now: now}, Config{DossierHome: "/tmp/dossier-test"}, nil)
 
 	payload, err := svc.SessionStart(context.Background(), "sess_unbound")
 	if err != nil {
@@ -577,7 +577,7 @@ func TestServiceListSorting(t *testing.T) {
 		fakeStore.revisions[d.Frontmatter.ID] = CalculateRevision(d.Frontmatter, d.DistilledState.Body, nil)
 	}
 
-	svc := NewService(fakeStore, srch, tok, hreg, clk, cfg)
+	svc := NewService(fakeStore, srch, tok, hreg, clk, cfg, nil)
 	listRes, err := svc.List(context.Background(), ListReq{})
 	if err != nil {
 		t.Fatalf("Service.List failed: %v", err)
@@ -597,7 +597,7 @@ func TestServiceListSorting(t *testing.T) {
 
 func TestMigrateIdempotence(t *testing.T) {
 	fakeStore := newLocalFakeStore()
-	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{}, Config{})
+	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{}, Config{}, nil)
 
 	d := &Dossier{
 		Frontmatter: Frontmatter{ID: "d1", Slug: "d1", Status: StatusActive},
@@ -627,7 +627,7 @@ func TestMigrateIdempotence(t *testing.T) {
 
 func TestDoctorAuditShards(t *testing.T) {
 	fakeStore := newLocalFakeStore()
-	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{}, Config{})
+	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{}, Config{}, nil)
 
 	d := &Dossier{
 		Frontmatter: Frontmatter{ID: "d1", Slug: "d1", Status: StatusActive},
@@ -665,7 +665,7 @@ func TestTwoAuthorSimulation(t *testing.T) {
 
 func TestSessionEndMissingTranscriptEmitsWarning(t *testing.T) {
 	fakeStore := newLocalFakeStore()
-	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{now: time.Date(2026, 6, 14, 12, 0, 0, 0, time.UTC)}, Config{TokenTarget: 100})
+	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{now: time.Date(2026, 6, 14, 12, 0, 0, 0, time.UTC)}, Config{TokenTarget: 100}, nil)
 	ctx := context.Background()
 
 	fakeStore.dossiers["dos_missing"] = &Dossier{

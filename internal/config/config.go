@@ -9,6 +9,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// TeamConfig holds configuration for the team sync remote.
+type TeamConfig struct {
+	Remote string `yaml:"remote,omitempty"`
+	Branch string `yaml:"branch,omitempty"`
+}
+
 // Config represents the schema of ~/.dossier/config.yaml.
 type Config struct {
 	DossierHome string `yaml:"dossier_home"`
@@ -18,7 +24,8 @@ type Config struct {
 	// It is intentionally left at its zero value in Default so that a config file
 	// written by an older build (which lacks the key) is detected as stale and
 	// triggers the one-time migration sweep on the next launch.
-	SchemaVersion int `yaml:"schema_version"`
+	SchemaVersion int        `yaml:"schema_version"`
+	Team          TeamConfig `yaml:"team,omitempty"`
 }
 
 // Default returns the default configuration with standard paths.

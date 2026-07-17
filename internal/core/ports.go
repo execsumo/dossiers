@@ -105,3 +105,47 @@ type HarnessRegistry interface {
 type Clock interface {
 	Now() time.Time
 }
+
+// SyncConflict captures a both-modified file.
+type SyncConflict struct {
+	Path           string
+	LocalContent   []byte
+	RemoteContent  []byte
+	LocalRevision  string
+	RemoteRevision string
+}
+
+// SyncExcluded describes an oversized file refused from the commit.
+type SyncExcluded struct {
+	Path    string
+	Size    int64
+	Warning string
+}
+
+// SyncReport is the result of one Sync run.
+type SyncReport struct {
+	Pulled        bool
+	Pushed        bool
+	CommitSHA     string
+	CommitMessage string
+	Conflicts     []SyncConflict
+	Excluded      []SyncExcluded
+	Ahead         int
+	Behind        int
+	Error         string
+}
+
+// SyncStatus is a read-only snapshot.
+type SyncStatus struct {
+	Ahead     int
+	Behind    int
+	LastSync  time.Time
+	Conflicts []SyncConflict
+	Dirty     int
+}
+
+// Syncer defines the port for synchronizing the dossier store with a remote.
+type Syncer interface {
+	Sync(ctx context.Context) (SyncReport, error)
+	Status(ctx context.Context) (SyncStatus, error)
+}

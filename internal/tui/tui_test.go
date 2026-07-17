@@ -199,6 +199,7 @@ func setupTestService(store core.Store) *core.Service {
 		testHarnessRegistry{},
 		testClock{},
 		core.Config{DossierHome: "/tmp/dossier_home", TokenTarget: 1000},
+		nil,
 	)
 }
 

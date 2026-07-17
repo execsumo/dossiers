@@ -500,10 +500,10 @@ func TestTwoAuthorSimulation(t *testing.T) {
 	_, _ = fs.Write(dossier, "")
 
 	cfgAlice := core.Config{DossierHome: tempHome, Author: "Alice"}
-	svcAlice := core.NewService(fs, dummySearcher{}, dummyTok{}, dummyHreg{}, dummyClock{now}, cfgAlice)
+	svcAlice := core.NewService(fs, dummySearcher{}, dummyTok{}, dummyHreg{}, dummyClock{now}, cfgAlice, nil)
 
 	cfgBob := core.Config{DossierHome: tempHome, Author: "Bob"}
-	svcBob := core.NewService(fs, dummySearcher{}, dummyTok{}, dummyHreg{}, dummyClock{now}, cfgBob)
+	svcBob := core.NewService(fs, dummySearcher{}, dummyTok{}, dummyHreg{}, dummyClock{now}, cfgBob, nil)
 
 	_ = fs.SaveSessionBinding(&core.SessionBinding{
 		SessionBindingID: "sess-alice",
