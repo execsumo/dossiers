@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -80,8 +82,53 @@ func ffToRemote(repo *git.Repository, wt *git.Worktree, cfg Config, remoteHash p
 	if err := repo.Storer.SetReference(plumbing.NewHashReference(branchRefName, remoteHash)); err != nil {
 		return fmt.Errorf("set branch ref: %w", err)
 	}
+	// go-git's Force checkout removes working-tree files that are absent from the
+	// target tree — including untracked/gitignored ones. The machine-local files
+	// (config.yaml, root sessions/, context/, sync state) are gitignored and thus
+	// never in the tree, so a naive Force checkout would delete them (nuking a
+	// joined colleague's team config on their first fast-forward pull). Stash them
+	// across the checkout and restore. They are purely local, so the remote tree
+	// can never legitimately carry them.
+	restore := stashMachineLocal(cfg.StoreDir)
+	defer restore()
 	if err := wt.Checkout(&git.CheckoutOptions{Branch: branchRefName, Force: true}); err != nil {
 		return fmt.Errorf("checkout: %w", err)
 	}
 	return nil
+}
+
+// machineLocalPreserve are the store-root machine-local paths that must survive a
+// force checkout. (.sync.lock is deliberately excluded — it is held during sync.)
+var machineLocalPreserve = []string{"config.yaml", ".syncstate.json", "sessions", "context"}
+
+// stashMachineLocal moves the machine-local paths out of storeDir into a temp dir
+// and returns a restore func that puts them back (overwriting anything the
+// checkout wrote in their place). Best-effort: a path that can't be moved is left
+// as-is rather than failing the sync.
+func stashMachineLocal(storeDir string) func() {
+	if storeDir == "" {
+		return func() {}
+	}
+	tmp, err := os.MkdirTemp("", "dossier-ml-")
+	if err != nil {
+		return func() {}
+	}
+	moved := map[string]string{}
+	for _, name := range machineLocalPreserve {
+		src := filepath.Join(storeDir, name)
+		if _, err := os.Lstat(src); err != nil {
+			continue // does not exist
+		}
+		dst := filepath.Join(tmp, name)
+		if err := os.Rename(src, dst); err == nil {
+			moved[src] = dst
+		}
+	}
+	return func() {
+		for src, dst := range moved {
+			_ = os.RemoveAll(src)   // remove whatever the checkout put here
+			_ = os.Rename(dst, src) // restore the original
+		}
+		_ = os.RemoveAll(tmp)
+	}
 }
