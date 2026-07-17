@@ -65,7 +65,11 @@ All features (CLI, MCP, and Rich TUI) are fully operational, tested, and integra
 - **D3 — Delegate routing:** Phase 2 wiring → **agy** (owner's stated default for sequential work). Parallel non-colliding track → **cline** (reserved for genuine parallelism). See memory `prefer-agy-delegate-default`.
 - **D4 — cline's parallel track = docs-only, brand-new files** (the only guaranteed zero-collision surface while Phase 2 rewrites code): Phase 4 teammate-facing onboarding + failure-drill runbook as new `docs/` files, describing the already-SPEC'd §7 command surface. Light post-Phase-2 reconciliation is cheap; code collision is impossible.
 
-**Phase 2 wiring: IN PROGRESS (agy delegate, launched 2026-07-16).** Phase 3–4 not started (except the cline docs pre-draft, D4).
+**Phase 2 wiring: IN PROGRESS (agy delegate, launched 2026-07-16).** Two delegates in flight (herdr panes):
+- **agy → Phase 2 wiring**, worktree `dossiers-worktrees/agy-teamsync-p2`, branch `delegate/agy-teamsync-p2` (based on `feat/teamsync-p2`). Spec: `<worktree>/.delegate/spec.md`. Scope: `core.Syncer` port (core stays pure) + wire `internal/sync.GitSync` behind it + `Service.Sync` orchestration + `dossier sync` CLI (thin) + sync-conflict routing into existing `WriteConflict` (`kind: sync_concurrent_edit`) + `team.remote`/branch config + PAT auth (`~/.dossier/credentials` 0600, `gh auth token` fallback). Model: Gemini 3.1 Pro (High). Tested against local bare repos.
+- **cline → Phase 4 docs pre-draft (D4, zero-collision, docs-only)**, worktree `dossiers-worktrees/cline-teamsync-docs`, branch `delegate/cline-teamsync-docs` (based on `team-sync`). Two NEW files only: `docs/team-sync-onboarding.md` (non-technical teammate) + `docs/team-sync-runbook.md` (operator failure drills). Spec-grounded, commands tagged for implementation status.
+
+Both are verified against their spec's DoD before integration (VERIFY gate). Phase 3 (onboarding + auto-sync) and remaining Phase 4 not started.
 
 **Resume here if interrupted:** the Phase 2 base is `feat/teamsync-p2` (green). Check `git worktree list` and the delegates' branches/panes for in-flight work; read `docs/spikes/gitsync-findings.md` (the Phase 2 brief) and `docs/team-sync-plan.md`. The plan's "Non-negotiables" + CLAUDE.md's Team Sync hard rule bind all phases.
 
