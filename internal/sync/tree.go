@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,15 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
+
+// isDossierConflictPath reports whether a repo-relative path is a dossier body
+// (<slug>/dossier.md) — the only genuinely multi-writer file, and thus the only
+// path that can produce a real sync conflict. Everything else (managed
+// .gitignore, author-namespaced audit/session shards) is single-writer or
+// managed and takes remote-wins silently.
+func isDossierConflictPath(path string) bool {
+	return path == "dossier.md" || strings.HasSuffix(path, "/dossier.md")
+}
 
 // remoteWinsMerge performs the 3-way remote-wins merge. For every file both
 // sides changed since the merge base, the remote version wins the working tree
@@ -43,8 +53,23 @@ func (g *GitSync) remoteWinsMerge(repo *git.Repository, wt *git.Worktree, local,
 	both := intersect(localPaths, remotePaths)
 	conflicts := make([]ConflictRecord, 0, len(both))
 	for path := range both {
+		// Only a dossier.md is a genuine multi-writer conflict worth preserving.
+		// Store-managed files (.gitignore) and author-namespaced single-writer
+		// files (audit/<author>.log, sessions/<author>/…) must never be routed as
+		// dossier conflicts — remote-wins lands them silently below. Without this,
+		// two independently-initialized stores (the normal onboarding flow, no
+		// common git ancestor) flag their identical .gitignore as a phantom
+		// conflict on first sync.
+		if !isDossierConflictPath(path) {
+			continue
+		}
 		localContent, _ := blobContent(repo, localTree, path)
 		remoteContent, _ := blobContent(repo, remoteTree, path)
+		// Identical content is not a conflict (e.g. both sides promoted the same
+		// body, or a no-common-ancestor first merge of byte-identical files).
+		if bytes.Equal(localContent, remoteContent) {
+			continue
+		}
 		conflicts = append(conflicts, ConflictRecord{
 			Path:           path,
 			LocalContent:   localContent,
