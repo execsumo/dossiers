@@ -177,6 +177,25 @@ func NewRootCmd() *cobra.Command {
 				fmt.Println("Dossier workspace checks failed.")
 			}
 
+			if report, ok := res.Data.(core.DoctorReport); ok {
+				fmt.Printf("\nChecked: %d dossiers, %d artifacts, %d audit logs\n", report.DossiersChecked, report.ArtifactsChecked, report.AuditLogsChecked)
+				if report.SyncConfigured {
+					fmt.Println("\nTeam Sync Status:")
+					if report.SyncStatus != nil {
+						lastSync := report.SyncStatus.LastSync.Format(time.RFC3339)
+						if report.SyncStatus.LastSync.IsZero() {
+							lastSync = "never"
+						}
+						fmt.Printf("  Last sync: %s\n", lastSync)
+						fmt.Printf("  Ahead: %d, Behind: %d\n", report.SyncStatus.Ahead, report.SyncStatus.Behind)
+						fmt.Printf("  Unresolved conflicts: %d\n", report.SyncStatus.ConflictsFound)
+					} else {
+						fmt.Println("  Configured but status unavailable")
+					}
+				}
+				fmt.Println()
+			}
+
 			for _, warning := range res.Warnings {
 				fmt.Printf("- Warning: %s\n", warning)
 			}

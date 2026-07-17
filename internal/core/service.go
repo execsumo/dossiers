@@ -58,13 +58,23 @@ type ListItem struct {
 	Path          string   `json:"path"`
 }
 
+type SyncStatusData struct {
+	Ahead          int       `json:"ahead"`
+	Behind         int       `json:"behind"`
+	LastSync       time.Time `json:"last_sync"`
+	Dirty          int       `json:"dirty"`
+	ConflictsFound int       `json:"conflicts_found"`
+}
+
 // DoctorReport summarizes integrity checks run by Doctor.
 type DoctorReport struct {
-	DossiersChecked  int      `json:"dossiers_checked"`
-	ArtifactsChecked int      `json:"artifacts_checked"`
-	AuditLogsChecked int      `json:"audit_logs_checked"`
-	ConflictsFound   int      `json:"conflicts_found"`
-	Issues           []string `json:"issues,omitempty"`
+	DossiersChecked  int             `json:"dossiers_checked"`
+	ArtifactsChecked int             `json:"artifacts_checked"`
+	AuditLogsChecked int             `json:"audit_logs_checked"`
+	ConflictsFound   int             `json:"conflicts_found"`
+	Issues           []string        `json:"issues,omitempty"`
+	SyncConfigured   bool            `json:"sync_configured"`
+	SyncStatus       *SyncStatusData `json:"sync_status,omitempty"`
 }
 
 // NewService instantiates the core orchestration service.
@@ -230,6 +240,22 @@ func (s *Service) Doctor(ctx context.Context) (Result, error) {
 		report.ConflictsFound = len(conflicts)
 		for _, c := range conflicts {
 			addIssue("Unresolved conflict %s for dossier %s", c.ID, c.DossierID)
+		}
+	}
+
+	if s.syncer != nil {
+		report.SyncConfigured = true
+		status, err := s.syncer.Status(ctx)
+		if err != nil {
+			addIssue("Failed to get sync status: %v", err)
+		} else {
+			report.SyncStatus = &SyncStatusData{
+				Ahead:          status.Ahead,
+				Behind:         status.Behind,
+				LastSync:       status.LastSync,
+				Dirty:          status.Dirty,
+				ConflictsFound: len(status.Conflicts),
+			}
 		}
 	}
 
@@ -1540,6 +1566,12 @@ func (s *Service) Path(ctx context.Context, req PathReq) (Result, error) {
 
 // SessionStart returns the injected context payload for a harness session.
 func (s *Service) SessionStart(ctx context.Context, sessionID string) (string, error) {
+	if s.syncer != nil {
+		syncCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		_, _ = s.Sync(syncCtx) // Best-effort bounded pull
+	}
+
 	binding, err := s.store.GetSessionBinding(sessionID)
 	var activeDossierID string
 	if err == nil && binding != nil {
@@ -1753,6 +1785,12 @@ func (s *Service) SessionEnd(ctx context.Context, sessionID string, distilledSta
 	if finalRevision != "" && string(finalRevision) != binding.LastSeenRevision {
 		binding.LastSeenRevision = string(finalRevision)
 		_ = s.store.SaveSessionBinding(binding)
+	}
+
+	if s.syncer != nil {
+		syncCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		_, _ = s.Sync(syncCtx) // Best-effort bounded push
 	}
 
 	return nil

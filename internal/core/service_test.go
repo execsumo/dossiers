@@ -697,3 +697,84 @@ func TestSessionEndMissingTranscriptEmitsWarning(t *testing.T) {
 		t.Fatalf("expected audit event AuditEventTranscriptCaptureUnavailable for missing transcript")
 	}
 }
+
+type mockSyncer struct {
+	syncCalls int
+	syncErr   error
+}
+
+func (m *mockSyncer) Sync(ctx context.Context) (SyncReport, error) {
+	m.syncCalls++
+	return SyncReport{Error: ""}, m.syncErr
+}
+func (m *mockSyncer) Status(ctx context.Context) (SyncStatus, error) {
+	return SyncStatus{Ahead: 1, Behind: 2}, nil
+}
+func (m *mockSyncer) Create(ctx context.Context) error                            { return nil }
+func (m *mockSyncer) Clone(ctx context.Context, url, dir string, depth int) error { return nil }
+
+func TestSessionBoundarySyncs(t *testing.T) {
+	fakeStore := newLocalFakeStore()
+
+	// Create a dummy dossier and session binding so SessionEnd doesn't error out early.
+	d := &Dossier{
+		Frontmatter: Frontmatter{ID: "dos_1", Status: StatusActive},
+	}
+	fakeStore.dossiers["dos_1"] = d
+	fakeStore.revisions["dos_1"] = "rev_1"
+	_ = fakeStore.SaveSessionBinding(&SessionBinding{
+		SessionBindingID: "test",
+		DossierID:        "dos_1",
+		LastSeenRevision: "rev_1",
+	})
+
+	syncer := &mockSyncer{}
+	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{}, Config{}, syncer)
+
+	// SessionStart
+	_, err := svc.SessionStart(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("SessionStart error: %v", err)
+	}
+	if syncer.syncCalls != 1 {
+		t.Errorf("expected 1 sync call from SessionStart, got %d", syncer.syncCalls)
+	}
+
+	// SessionEnd
+	err = svc.SessionEnd(context.Background(), "test", "", "")
+	if err != nil {
+		t.Fatalf("SessionEnd error: %v", err)
+	}
+	if syncer.syncCalls != 2 {
+		t.Errorf("expected 2 sync calls total after SessionEnd, got %d", syncer.syncCalls)
+	}
+
+	// Test non-fatal error
+	syncer.syncErr = NewError(ErrInternal, "mock network error")
+	_, err = svc.SessionStart(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("SessionStart error should be ignored: %v", err)
+	}
+	err = svc.SessionEnd(context.Background(), "test", "", "")
+	if err != nil {
+		t.Fatalf("SessionEnd error should be ignored: %v", err)
+	}
+}
+
+func TestServiceDoctorSync(t *testing.T) {
+	fakeStore := newLocalFakeStore()
+	syncer := &mockSyncer{}
+	svc := NewService(fakeStore, &mockSearcher{}, &mockTokenizer{}, &mockHarnessRegistry{}, &mockClock{}, Config{}, syncer)
+
+	res, err := svc.Doctor(context.Background())
+	if err != nil {
+		t.Fatalf("Doctor error: %v", err)
+	}
+	report := res.Data.(DoctorReport)
+	if !report.SyncConfigured {
+		t.Errorf("expected SyncConfigured to be true")
+	}
+	if report.SyncStatus == nil || report.SyncStatus.Ahead != 1 || report.SyncStatus.Behind != 2 {
+		t.Errorf("expected valid SyncStatus, got %+v", report.SyncStatus)
+	}
+}
