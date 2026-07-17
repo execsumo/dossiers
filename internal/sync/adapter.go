@@ -81,3 +81,13 @@ func (a *Adapter) Status(ctx context.Context) (core.SyncStatus, error) {
 		Dirty:     st.Dirty,
 	}, nil
 }
+
+// Create implements core.Syncer.
+func (a *Adapter) Create(ctx context.Context) error {
+	return a.gs.Create(ctx)
+}
+
+// Clone implements core.Syncer.
+func (a *Adapter) Clone(ctx context.Context, url, dir string, depth int) error {
+	return a.gs.Clone(url, dir, depth)
+}

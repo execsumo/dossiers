@@ -1189,7 +1189,108 @@ func NewRootCmd() *cobra.Command {
 	syncCmd.Flags().BoolVar(&jsonFlag, "json", false, "Output results in JSON format")
 	rootCmd.AddCommand(syncCmd)
 
+	teamCmd := &cobra.Command{
+		Use:   "team",
+		Short: "Manage team sync setup",
+	}
+
+	teamCreateCmd := &cobra.Command{
+		Use:   "create <url>",
+		Short: "Turn the current store into a team's shared store",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			homeDir := resolveHomeDir()
+
+			cfgPath := filepath.Join(homeDir, "config.yaml")
+			cfg, err := config.Load(cfgPath)
+			if err != nil {
+				fmt.Printf("Error loading config: %v\n", err)
+				os.Exit(1)
+			}
+			cfg.Team.Remote = args[0]
+			cfg.Team.Branch = "main"
+			if err := cfg.Save(cfgPath); err != nil {
+				fmt.Printf("Error saving config: %v\n", err)
+				os.Exit(1)
+			}
+
+			svc, err := wire(homeDir)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+
+			res, err := svc.TeamCreate(context.Background(), core.TeamCreateReq{
+				RemoteURL: args[0],
+				Branch:    "main",
+			})
+			if err != nil {
+				fmt.Printf("Team create failed: %v\n", err)
+				os.Exit(1)
+			}
+
+			if jsonFlag {
+				printJSON(res)
+				return
+			}
+			fmt.Println("Team store created successfully.")
+		},
+	}
+	teamCreateCmd.Flags().BoolVar(&jsonFlag, "json", false, "Output results in JSON format")
+
+	teamJoinCmd := &cobra.Command{
+		Use:   "join <url>",
+		Short: "Join an existing team store",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			homeDir := resolveHomeDir()
+
+			cfgPath := filepath.Join(homeDir, "config.yaml")
+			cfg, err := config.Load(cfgPath)
+			if err != nil {
+				fmt.Printf("Error loading config: %v\n", err)
+				os.Exit(1)
+			}
+			cfg.Team.Remote = args[0]
+			cfg.Team.Branch = "main"
+			if err := cfg.Save(cfgPath); err != nil {
+				fmt.Printf("Error saving config: %v\n", err)
+				os.Exit(1)
+			}
+
+			svc, err := wire(homeDir)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+
+			res, err := svc.TeamJoin(context.Background(), core.TeamJoinReq{
+				RemoteURL: args[0],
+				Branch:    "main",
+			})
+			if err != nil {
+				fmt.Printf("Team join failed: %v\n", err)
+				os.Exit(1)
+			}
+
+			if jsonFlag {
+				printJSON(res)
+				return
+			}
+			fmt.Println("Successfully joined team store.")
+			for _, warning := range res.Warnings {
+				fmt.Printf("Warning: %s\n", warning)
+			}
+		},
+	}
+	teamJoinCmd.Flags().BoolVar(&jsonFlag, "json", false, "Output results in JSON format")
+
+	teamCmd.AddCommand(teamCreateCmd)
+	teamCmd.AddCommand(teamJoinCmd)
+	rootCmd.AddCommand(teamCmd)
+
 	return rootCmd
+
 }
 
 // Execute runs the cobra command parser.

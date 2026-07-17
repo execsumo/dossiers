@@ -11,12 +11,14 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
+	gitconfig "github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing"
 )
 
 // Clone clones url (or the configured RemoteURL) into dir, making dir a working
 // tree. Used by the future "dossier team join" flow. The store-wide .gitignore
 // is ensured after the clone.
-func (g *GitSync) Clone(url, dir string) error {
+func (g *GitSync) Clone(url, dir string, depth int) error {
 	if url == "" {
 		url = g.cfg.RemoteURL
 	}
@@ -29,14 +31,68 @@ func (g *GitSync) Clone(url, dir string) error {
 	if dir == "" {
 		return errors.New("sync: clone requires a target dir")
 	}
+
+	if entries, err := os.ReadDir(dir); err == nil {
+		for _, e := range entries {
+			if e.Name() != "config.yaml" && e.Name() != ".gitignore" {
+				return errors.New("target directory is not empty; cannot join into an existing store")
+			}
+		}
+	}
+
 	if _, err := git.PlainClone(dir, false, &git.CloneOptions{
 		URL:        url,
 		RemoteName: originName,
 		Auth:       g.cfg.Auth,
-	}); err != nil && !errors.Is(err, git.ErrRepositoryAlreadyExists) {
+		Depth:      depth,
+	}); err != nil {
+		if errors.Is(err, git.ErrRepositoryAlreadyExists) {
+			return errors.New("target directory is not empty; cannot join into an existing store")
+		}
 		return fmt.Errorf("sync clone %s: %w", url, err)
 	}
 	return EnsureGitignore(dir)
+}
+
+// Create initializes the git repo, sets HEAD to the configured branch, and pushes the initial commit.
+func (g *GitSync) Create(ctx context.Context) error {
+	storeDir := g.cfg.StoreDir
+	if storeDir == "" {
+		return errors.New("sync: StoreDir is required")
+	}
+
+	repo, err := git.PlainInit(storeDir, false)
+	if err != nil {
+		if errors.Is(err, git.ErrRepositoryAlreadyExists) {
+			return errors.New("store is already a team store")
+		}
+		return fmt.Errorf("init repo: %w", err)
+	}
+
+	headRef := plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.ReferenceName("refs/heads/"+g.cfg.Branch))
+	if err := repo.Storer.SetReference(headRef); err != nil {
+		return fmt.Errorf("set HEAD: %w", err)
+	}
+
+	if g.cfg.RemoteURL == "" {
+		return errors.New("sync: RemoteURL is required for create")
+	}
+	_, err = repo.CreateRemote(&gitconfig.RemoteConfig{
+		Name: originName,
+		URLs: []string{g.cfg.RemoteURL},
+	})
+	if err != nil {
+		return fmt.Errorf("create remote: %w", err)
+	}
+
+	report, err := g.syncWithCtx(ctx)
+	if err != nil {
+		return err
+	}
+	if report.Error != "" {
+		return fmt.Errorf("initial sync error: %s", report.Error)
+	}
+	return nil
 }
 
 // Sync runs the full pull → resolve(remote-wins) → commit → push cycle against

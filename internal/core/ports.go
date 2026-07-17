@@ -148,4 +148,6 @@ type SyncStatus struct {
 type Syncer interface {
 	Sync(ctx context.Context) (SyncReport, error)
 	Status(ctx context.Context) (SyncStatus, error)
+	Create(ctx context.Context) error
+	Clone(ctx context.Context, url, dir string, depth int) error
 }

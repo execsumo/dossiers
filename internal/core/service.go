@@ -345,6 +345,69 @@ func validateDistilledStateProvenance(body string, dossierID string, artifactExi
 	return issues
 }
 
+// TeamCreateReq specifies parameters for creating a new team store.
+type TeamCreateReq struct {
+	RemoteURL string
+	Branch    string
+}
+
+// TeamCreate initializes the current store as a team store and pushes to the remote.
+func (s *Service) TeamCreate(ctx context.Context, req TeamCreateReq) (Result, error) {
+	if req.RemoteURL == "" {
+		return Result{}, NewError(ErrInvalidFrontmatter, "remote URL is required")
+	}
+	if req.Branch == "" {
+		req.Branch = "main"
+	}
+	if s.syncer == nil {
+		return Result{}, NewError(ErrInternal, "syncer is not configured")
+	}
+
+	err := s.syncer.Create(ctx)
+	if err != nil {
+		if strings.Contains(err.Error(), "already a team store") {
+			return Result{}, NewError(ErrConflictDetected, "store is already a team store")
+		}
+		return Result{}, fmt.Errorf("team create failed: %w", err)
+	}
+
+	return Result{OK: true}, nil
+}
+
+// TeamJoinReq specifies parameters for joining an existing team store.
+type TeamJoinReq struct {
+	RemoteURL string
+	Branch    string
+}
+
+// TeamJoin joins an existing team store by cloning it locally.
+func (s *Service) TeamJoin(ctx context.Context, req TeamJoinReq) (Result, error) {
+	if req.RemoteURL == "" {
+		return Result{}, NewError(ErrInvalidFrontmatter, "remote URL is required")
+	}
+	if req.Branch == "" {
+		req.Branch = "main"
+	}
+	if s.syncer == nil {
+		return Result{}, NewError(ErrInternal, "syncer is not configured")
+	}
+
+	err := s.syncer.Clone(ctx, req.RemoteURL, s.cfg.DossierHome, 50)
+	if err != nil {
+		if strings.Contains(err.Error(), "target directory is not empty") {
+			return Result{}, NewError(ErrConflictDetected, "target directory is not empty; cannot join into an existing store")
+		}
+		return Result{}, fmt.Errorf("team join failed: %w", err)
+	}
+
+	initRes, initErr := s.Init(ctx, InitReq{})
+	if initErr != nil {
+		return Result{}, fmt.Errorf("post-join init failed: %w", initErr)
+	}
+
+	return Result{OK: true, Warnings: initRes.Warnings}, nil
+}
+
 // Stubs for future milestones
 
 type PromoteReq struct {

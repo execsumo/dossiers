@@ -124,6 +124,8 @@ func (s *Service) Archive(ctx, ArchiveReq) (Result, error)
 func (s *Service) Path(ctx, PathReq) (Result, error)
 func (s *Service) Doctor(ctx) (Result, error)
 func (s *Service) Init(ctx, InitReq) (Result, error)
+func (s *Service) TeamCreate(ctx, TeamCreateReq) (Result, error)
+func (s *Service) TeamJoin(ctx, TeamJoinReq) (Result, error)
 ```
 
 `Result` carries `data any`, `warnings []Warning`, `next_actions []NextAction` — the exact §8.2 envelope, but surface-agnostic. The MCP adapter serializes it as JSON; the CLI adapter prints text or `--json`; the TUI renders it. **Warnings (e.g. over-token-target, transcript-unavailable) are produced once in core** and flow to every surface — never re-implemented per adapter.
@@ -168,6 +170,8 @@ type Clock interface{ Now() time.Time }
 type Syncer interface {
     Sync(ctx context.Context) (SyncReport, error)     // pull→resolve(remote-wins)→commit→push
     Status(ctx context.Context) (SyncStatus, error)   // ahead/behind/last-sync, no mutation
+    Create(ctx context.Context) error                 // initialize team store and push
+    Clone(ctx context.Context, url, dir string, depth int) error // join team store
 }
 ```
 
