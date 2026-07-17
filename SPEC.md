@@ -426,21 +426,21 @@ dossier doctor
 - Hides Dossier from default open-work view.
 - Does not delete files.
 
-`dossier sync` (Team Sync — implementation phased per docs/team-sync-plan.md)
+`dossier sync` (Team Sync — implemented)
 
 - Pulls, resolves, commits, and pushes to the configured team remote.
 - With `--status`: reports unpushed commits, diverged remote, or stale credentials without modifying state.
 - Supports `--json` output for MCP/TUI wrappers.
 - Failure modes degrade visibly: network offline, expired/invalid auth, and oversized artifacts (>100 MB) return explicit surfaced warnings, never silent failures.
 
-`dossier team create <url>` (Team Sync — implementation phased per docs/team-sync-plan.md)
+`dossier team create <url>` (Team Sync — implemented)
 
 - Initializes and pushes the existing store to an empty private repo.
 - Validates the target repo is empty.
 - Writes `team.remote` to config.
 - Supports `--json`.
 
-`dossier team join <url>` (Team Sync — implementation phased per docs/team-sync-plan.md)
+`dossier team join <url>` (Team Sync — implemented)
 
 - Clones the team repo into `DOSSIER_HOME`.
 - Refuses to clobber a non-empty unsynced store (requires merge-adopt flow with confirmation).
@@ -996,6 +996,7 @@ Checks:
 
 ### 14.10 Team Sync
 
+> Status (2026-07-16): implemented and integrated; all criteria are covered by automated tests against local bare repos (internal/sync, internal/cli) EXCEPT the "exactly two commands and one sign-in" PAT onboarding, which remains pending the Phase 4 real-GitHub pilot.
 - Two stores converge through one remote.
 - Concurrent `dossier.md` edit yields exactly one `conflicts/*.md` (`kind: sync_concurrent_edit`) on the later syncer with no content lost anywhere.
 - Save never blocks on network (offline save succeeds, push retries later with a visible warning).

@@ -3,8 +3,8 @@
 > Audience: the least-technical teammate joining a shared Dossier store.
 > You do **not** need any developer tools for this. If you can run one command and sign in once, you're in.
 
-> **Some commands below are specified ahead of implementation; this guide describes the intended experience.**
-> Any command not yet built is marked "(coming in a later release)".
+> **Status (Pilot): The team sync commands are built and work locally, but the shared GitHub flow is being piloted and is not yet validated against live GitHub.**
+> Treat this as an experimental feature.
 
 ## What a shared Dossier store is
 
@@ -19,7 +19,7 @@ Your work is saved on your own machine first, and only then shared. Nothing you 
 You'll get a link to the team store from whoever set it up.
 
 ```text
-dossier team join <url>   (coming in a later release)
+dossier team join <url>
 ```
 
 Replace `<url>` with the link you were given. The command will:
@@ -41,10 +41,10 @@ Once you've joined, your work on a Dossier is **always saved on your machine fir
 Syncing starts simple: a manual step you run when you want to share your latest work or catch up to your colleagues:
 
 ```text
-dossier sync   (coming in a later release)
+dossier sync
 ```
 
-A later phase makes syncing happen **automatically** around your saves and lookups, so you won't have to think about it (coming in a later release).
+A later phase makes syncing happen **automatically** around your saves and lookups, so you won't have to think about it (currently in pilot testing).
 
 Either way, a flaky connection never loses your work. If a sync can't reach the team store right now, Dossier tells you plainly and keeps your changes safe until the next sync.
 

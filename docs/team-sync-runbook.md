@@ -3,15 +3,15 @@
 > Audience: the person who set up the team store. This is a failure-drill reference.
 > Each entry: **symptom → what happened → what to do**.
 
-> **Status:** these commands are specified ahead of implementation; this runbook describes the intended operator experience. Commands not yet built are tagged "(coming in a later release)".
+> **Status (Pilot):** The team sync commands are built and work locally, but the shared GitHub flow is being piloted and is not yet validated against live GitHub. Treat this as an experimental feature.
 
-**Setup recap (you, once):** you created the team store with `dossier team create <url>` (coming in a later release), which initializes and pushes the existing store to an empty private repo and writes `team.remote` to config. Each colleague then joins with `dossier team join <url>` (coming in a later release). Sync transport is fully hidden inside the binary; this runbook may reference the mechanism (commits, push/pull, the remote, the working tree) but you never run raw version-control commands yourself.
+**Setup recap (you, once):** you created the team store with `dossier team create <url>`, which initializes and pushes the existing store to an empty private repo and writes `team.remote` to config. Each colleague then joins with `dossier team join <url>`. Sync transport is fully hidden inside the binary; this runbook may reference the mechanism (commits, push/pull, the remote, the working tree) but you never run raw version-control commands yourself.
 
 ## Quick reference
 
 | Symptom | What happened | Immediate action |
 |---|---|---|
-| "can't reach the team store" / sync deferred | Remote unreachable (offline or bad URL) | Local commit still landed; retry `dossier sync` (coming in a later release); inspect with `dossier sync --status` (coming in a later release) |
+| "can't reach the team store" / sync deferred | Remote unreachable (offline or bad URL) | Local commit still landed; retry `dossier sync`; inspect with `dossier sync --status` |
 | `sync_auth_failed` warning | PAT missing, expired, or lacks the right access | Run the re-auth command shown in the warning; ensure `~/.dossier/credentials` is `0600` |
 | ">100 MB" exclusion warning | File exceeds GitHub's 100 MB hard limit | Stays local, never enters shared history; move it out of the store or reference it externally |
 | new `conflicts/<id>.md`, `kind: sync_concurrent_edit` | Two machines edited the same `dossier.md` body | Remote won the working tree; local version preserved as the conflict note; reconcile in the TUI, verify with `dossier doctor` |
@@ -28,13 +28,13 @@
 - Fix connectivity or correct the remote URL, then retry:
 
   ```text
-  dossier sync            (coming in a later release)
+  dossier sync
   ```
 
 - Inspect the queue without changing state:
 
   ```text
-  dossier sync --status   (coming in a later release)
+  dossier sync --status
   ```
 
   It reports unpushed commits, a diverged remote, or stale credentials.
@@ -115,7 +115,7 @@ Nothing is lost; there are **never merge markers** in the store.
 
 ## Healthy-state checks
 
-- `dossier sync --status` (coming in a later release) — read-only: unpushed commits, diverged remote, or stale credentials.
+- `dossier sync --status` — read-only: unpushed commits, diverged remote, or stale credentials.
 - `dossier doctor` — store integrity, unresolved conflicts, provenance references, and harness/capability status.
 - TUI footer (later surfacing phase) — a glanceable status line, e.g. `synced 2m ago · 1 conflict`.
 

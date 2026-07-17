@@ -116,6 +116,7 @@ One Go binary serves the CLI, the MCP-over-stdio server, and the session hooks. 
 
 ## Good to know
 
+- **Team Sync (pilot).** Dossier includes an experimental, optionally team-synced mode so you can share a store with colleagues. It keeps your work local-first, pulling and pushing changes to a shared GitHub repo. For setup and how to join a team, see [`docs/team-sync-onboarding.md`](docs/team-sync-onboarding.md).
 - **Claude Code only.** Claude Code exposes the full set of hooks, MCP, and transcript capture Dossier relies on. Other harnesses (Codex, Antigravity) are out of scope. If a capability is missing in a given session, Dossier says so at install and at session start rather than failing silently.
 - **Config lives in two files.** Hooks go in `~/.claude/settings.json`; the MCP server goes in `~/.claude.json` (the only place Claude Code reads user-scope MCP servers). Both store the absolute path of the stable binary — if you rebuild, rename, or move it, re-run `dossier install` then `dossier init` to re-bind, idempotently.
 - **Token counts are estimates.** Dossier uses a BPE tokenizer benchmarked against Opus 4.8; it won't match every model exactly. The 100k-token figure is a configurable warning threshold, not a hard cap — Dossier warns, it never silently truncates.
